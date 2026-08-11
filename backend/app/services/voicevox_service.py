@@ -68,11 +68,13 @@ class VoicevoxService:
                 query = aq.json()
                 # 2. Tinh chỉnh giọng đọc (tuỳ chọn)
                 query["speedScale"] = min(max(query.get("speedScale", 1.0), 0.5), 2.0)
-                # 3. Synthesis
+                # 3. Synthesis — gửi audio_query JSON dưới dạng body JSON
+                # (httpx: dict phải dùng `json=`, không dùng `content=` sẽ lỗi
+                #  "Unexpected type for 'content'").
                 syn = await client.post(
                     f"{self.base_url}/synthesis",
                     params={"speaker": self.speaker_id},
-                    content=query,
+                    json=query,
                 )
                 syn.raise_for_status()
                 wav = syn.content

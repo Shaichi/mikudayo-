@@ -39,8 +39,10 @@ SCHEMA_JSON = {
     "properties": {
         "transcript_ja": {"type": "string"},
         "reply_ja": {"type": "string"},
-        "correction_ja": {"type": ["string", "null"]},
-        "explanation_vi": {"type": ["string", "null"]},
+        # Gemini API không chấp nhận kiểu union ["string","null"] —
+        # phải dùng "nullable": true (nếu không sẽ 502 "validation errors for Schema").
+        "correction_ja": {"type": "string", "nullable": True},
+        "explanation_vi": {"type": "string", "nullable": True},
         "emotion": {
             "type": "string",
             "enum": ["neutral", "happy", "excited", "thinking", "embarrassed", "sad"],
@@ -60,6 +62,19 @@ SCHEMA_JSON = {
         },
     },
     "required": ["transcript_ja", "reply_ja", "emotion", "difficulty", "vocabulary"],
+}
+
+# Schema NHỎ cho audio input. Model mới (gemini-flash-latest) trả 500 INTERNAL
+# khi audio + schema to (có enum/array/nested). Khi có audio_bytes ta chỉ xin
+# transcript + reply + emotion để model xử lý được; các field còn lại để default.
+AUDIO_SCHEMA_JSON = {
+    "type": "object",
+    "properties": {
+        "transcript_ja": {"type": "string"},
+        "reply_ja": {"type": "string"},
+        "emotion": {"type": "string", "enum": ["neutral", "happy", "excited", "thinking", "embarrassed", "sad"]},
+    },
+    "required": ["transcript_ja", "reply_ja", "emotion"],
 }
 
 # Chế độ mock — dùng khi chưa có key, để UI/API test được.
@@ -183,13 +198,17 @@ class GeminiService:
             else:
                 contents = user_text
 
+            # Audio input + schema to → model mới lỗi 500 INTERNAL. Với audio
+            # ta dùng schema nhỏ (transcript/reply/emotion), còn text thì đủ.
+            schema = AUDIO_SCHEMA_JSON if audio_bytes is not None else SCHEMA_JSON
+
             response = self._client.models.generate_content(
                 model=settings.GEMINI_MODEL,
                 contents=contents,
                 config=types.GenerateContentConfig(
                     system_instruction=self.build_prompt(mode, level, summary, recent_turns),
                     response_mime_type="application/json",
-                    response_schema=SCHEMA_JSON,
+                    response_schema=schema,
                     temperature=settings.GEMINI_TEMPERATURE,
                 ),
             )

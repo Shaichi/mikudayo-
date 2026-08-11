@@ -30,11 +30,13 @@ void main() {
   });
 
   test('sendText với correction mode trả explanation', () async {
+    // Dùng câu thật sự sai ngữ pháp để Gemini phải sửa.
+    // (Câu '私はベトナム人です' không sai → Gemini không sửa là hành vi đúng.)
     final result = await api.sendText(
       baseUrl: _base,
-      text: '私はベトナム人です',
+      text: 'きょうはなんですか',
       mode: 'correction',
-      jlptLevel: 'N4',
+      jlptLevel: 'N5',
     );
     expect(result.explanationVi, isNotNull);
   });
