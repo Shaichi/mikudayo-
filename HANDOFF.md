@@ -1,12 +1,16 @@
 # BÀN GIAO — Miku Japanese Conversation (Flutter + Gemini + VOICEVOX + RVC + Live2D)
 
-> **Trạng thái:** Phiên 2 (2026-08-12) đã hoàn thành **Phase 0 + Phase 1** —
-> backend chạy mock, Flutter text chat end-to-end hoạt động, README + tests OK.
+> **Trạng thái:** Phiên 2 (2026-08-12) đã hoàn thành **Phase 0 → Phase 5** +
+> scaffold **Phase 6 (research)**. Toàn pipeline chạy end-to-end với mock
+> fallback cho cả 3 engine. Đã push lên GitHub `Shaichi/mikudayo-` (branch main).
 > Tài liệu gốc: `Tai_lieu_du_an_Miku_Japanese_Conversation_Flutter (1).docx`.
 
 ---
 
-## 1. ĐÃ HOÀN THÀNH (Phiên 2)
+## 1. ĐÃ HOÀN THÀNH (Phiên 2 — Phase 0–5 + Phase 6 scaffold)
+
+> Mục 1.1/1.2 giữ lại từ đầu phiên (Phase 0+1). Mục 1.5 trở đi là phần mới
+> Phase 2–6 trong cùng phiên.
 
 ### 1.1 Backend Phase 1 — VERIFIED ✅
 Đã chạy thật với mock mode và test toàn bộ endpoints:
@@ -74,41 +78,85 @@ lib/
 
 ---
 
-## 2. VIỆC CÒN LẠI (Phase 2–6)
+## 1.5 PHASE 2–6 ĐÃ TRIỂN KHAI (cùng phiên)
 
-> Chi tiết trong tài liệu gốc + README (mục Checklist).
+### 1.5.1 Backend Phase 2–5 — VERIFIED ✅
 
-### Phase 2 — Voice input (kế tiếp)
-- `flutter pub add record` (+ permission_handler).
-- `backend/app/api/conversation.py`: thay stub `user_text = "（音声入力はPhase 2で対応）"`
-  bằng lời gọi Gemini audio understanding → transcribe.
-- Flutter: giữ-nút-record → WAV → upload (multipart `audio` field đã hỗ trợ sẵn
-  trong endpoint). State machine thêm `recording → uploading`.
+| Thành phần | File | Trạng thái |
+|---|---|---|
+| Audio upload + transcribe | `app/api/conversation.py` (field `audio`), `gemini_service.generate_turn(audio_bytes)` | ✅ mock trả `（音声入力・モック）…`; live gửi `types.Part.from_bytes` |
+| TTS | `services/voicevox_service.py` `synthesize()` = `/audio_query` → `/synthesis`; `mock_wav()` 440+880Hz khi engine tắt | ✅ |
+| RVC | `services/rvc_service.py` `convert()` POST `/convert`; fallback source.wav khi worker lỗi | ✅ |
+| Lip-sync | `services/lipsync_service.py` RMS 50ms → `MouthCue{t_ms,mouth}` | ✅ |
+| Audio endpoint | `GET /v1/audio/{turn_id}` → FileResponse wav | ✅ |
+| `/health` engine flags | `voicevox`, `rvc` | ✅ |
 
-### Phase 3 — VOICEVOX (TTS)
-- Triển khai `voicevox_service.synthesize()` (audio_query → synthesis).
-- Thêm `GET /v1/audio/{id}` trả wav; `audio_url` trong response.
-- Flutter: `flutter pub add just_audio` → phát audio_url, đồng bộ state `synthesizing → playing`.
+Full pipeline thử thật (mock): `POST turn text → reply_ja + emotion + audio_url +
+16 mouth_cues`, tải audio về = WAV RIFF hợp lệ. `sendAudio` upload → transcript mock
++ reply + cues.
 
-### Phase 4 — RVC worker
-- Triển khai `rvc_service.convert()` + fallback source.wav khi RVC lỗi.
-- Worker URL từ settings (`RVC_WORKER_URL`).
+### 1.5.2 Flutter Phase 2–5 — XONG ✅
 
-### Phase 5 — Avatar Live2D
-- Triển khai `lipsync_service.compute_mouth_cues()` (RMS 40–60ms).
-- Thay `avatar_controller.dart` bằng Live2D bridge; khớp `MouthCue` + `MikuEmotion`.
+- **Push-to-talk** (`conversation_screen.dart` `_InputBar`): giữ mic → `recording` (đếm
+  giây), nhả → `stopRecordingAndSend()`, kéo ra ngoài → hủy. Mic record package
+  (WAV 16kHz mono) qua `data/services/audio_service.dart`.
+- **Playback** just_audio: `_completeTurn` tải audio_bytes → `playBytes` song song
+  `avatar.playMouthCues(mouthCues)`.
+- **Avatar lip-sync**: `avatar_controller.dart` `AvatarState.mouthOpen` + `playMouthCues()`
+  (Timer 30ms nội suy cue), `miku_avatar.dart` scale emoji theo `mouthOpen`.
+- **Live2D bridge**: `lib/avatar/live2d_bridge.dart` — abstract `Live2dBridge` +
+  `NoopLive2dBridge`. Khi có SDK thật chỉ cần implement + `setBridge()`, UI không đổi.
 
-### Phase 6 — Realtime
-- Gemini Live + WebSocket (`/v2/live` khung sẵn). Research trước, merge nếu ổn.
+### 1.5.3 Phase 6 scaffold (research) 🔬
+
+- `backend/app/api/realtime.py` — WebSocket `/v2/live`: nhận text event + PCM chunk,
+  ack round-trip (đã test WS: event.ack, pcm.ack, disconnect OK).
+- Chưa nối Gemini Live (Preview, stateful WSS, PCM 16k/24k). Giữ push-to-talk là
+  sản phẩm chính; merge realtime chỉ khi latency < ~1s (mục 14.1 tài liệu).
+
+### 1.5.4 Kiểm thử Phase 2–5 ✅
+
+- `flutter analyze` → **No issues found** (sửa `dispose()` → `ref.onDispose` trong
+  `avatar_controller.dart`, `prefer_function_declarations_over_variables` trong test).
+- `flutter test` → **4/4 pass** (3 live integration vs backend mock + widget test).
+- `flutter build windows --debug` → ✅ build OK.
+- Live WS test `/v2/live` round-trip OK.
+
+### 1.5.5 Git
+
+- Repo `https://github.com/Shaichi/mikudayo-.git`, branch `main`, đã push.
+- `.gitignore` bổ sung: `.env`, `data/`, `audio/`, `build/`, `.claude/`.
+
+---
+
+## 2. VIỆC CÒN LẠI (defer — chỉ khi cần)
+
+> Phase 2–5 đã xong. Chỉ còn việc *optional* dưới đây.
+
+### Defer A — Cài engine thật để nghe giọng thật
+- Cài **VOICEVOX** (cổng 50021) → `/health` báo `voicevox:true`; giọng Miku-like.
+- Chạy **RVC worker** (cổng 8010) + load model → `rvc:true`, nghe giọng chuyển đổi.
+- Điền `GEMINI_API_KEY` vào `.env` → trả lời + transcribe thật (thay mock).
+
+### Defer B — Live2D avatar thật
+- Chưa có SDK Live2D chính thức cho Flutter (mục 10 tài liệu). Implement
+  `Live2dBridge` (web/native), gọi `avatarController.setBridge()` — UI không đổi.
+
+### Defer C — Phase 6 Realtime (research only)
+- Gemini Live là Preview: stateful WebSocket, PCM 16kHz in / 24kHz out [S7][S24].
+- Khung `/v2/live` đã có (event + PCM ack). Khi thử: nối Gemini Live client,
+  đo latency; merge nhánh chỉ khi < ~1s và ổn định.
 
 ---
 
 ## 3. LƯU Ý KỸ THUẬT
 - Backend mock khi `GEMINI_API_KEY` trống → toàn pipeline UI test được không cần key.
-- VOICEVOX/RVC/lipsync service ném `NotImplementedError` là **chủ ý** (Phase 3/4/5).
+  VOICEVOX/RVC tắt → tự mock WAV / fallback, app vẫn chạy đủ pipeline.
 - Key Gemini chỉ trong `backend/.env`, không commit. Google chuyển auth keys từ 09/2026.
 - Environment: Windows 11, Python 3.11.15, Flutter 3.41.9 / Dart 3.11.5.
-- Git repo **chưa khởi tạo** (nên `git init` khi bắt đầu Phase 2).
+- Git: repo `Shaichi/mikudayo-`, branch `main`, đã push (README + HANDOFF + full source).
 - Console Windows không hiển thị UTF-8 qua `curl` (ra `?????`) — test bằng
   `PYTHONIOENCODING=utf-8 python -c "..."` với httpx, hoặc dùng `-F "text=..."`
   với tool hỗ trợ UTF-8.
+- Backend chạy mock mode 3 engine: có thể xóa `backend/data/miku.db` + `backend/data/audio/`
+  bất cứ lúc nào — server tự tạo lại.

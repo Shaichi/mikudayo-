@@ -72,7 +72,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       body: Column(
         children: [
           // Avatar + trạng thái.
-          _Header(emotion: avatar.emotion, isThinking: vm.isThinking),
+          _Header(
+            emotion: avatar.emotion,
+            mouthOpen: avatar.mouthOpen,
+            status: vm.statusLabel,
+          ),
           const Divider(height: 1),
           // Danh sách tin nhắn.
           Expanded(
@@ -93,10 +97,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               },
             ),
           ),
-          // Ô nhập + nút gửi.
+          // Ô nhập + nút gửi + push-to-talk.
           _InputBar(
             controller: _controller,
-            isThinking: vm.isThinking,
             onSend: _send,
           ),
         ],
@@ -106,10 +109,15 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.emotion, required this.isThinking});
+  const _Header({
+    required this.emotion,
+    required this.mouthOpen,
+    required this.status,
+  });
 
   final MikuEmotion emotion;
-  final bool isThinking;
+  final double mouthOpen;
+  final String status;
 
   @override
   Widget build(BuildContext context) {
@@ -117,15 +125,17 @@ class _Header extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
         children: [
-          MikuAvatar(emotion: emotion, radius: 42),
+          MikuAvatar(emotion: emotion, mouthOpen: mouthOpen, radius: 42),
           const SizedBox(height: 8),
           Text(
-            isThinking ? 'Miku đang suy nghĩ…' : 'Miku sẵn sàng!',
+            status,
             style: TextStyle(
-              color: isThinking
-                  ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).colorScheme.onSurfaceVariant,
-              fontWeight: isThinking ? FontWeight.w600 : FontWeight.w400,
+              color: status == 'Miku sẵn sàng!'
+                  ? Theme.of(context).colorScheme.onSurfaceVariant
+                  : Theme.of(context).colorScheme.primary,
+              fontWeight: status == 'Miku sẵn sàng!'
+                  ? FontWeight.w400
+                  : FontWeight.w600,
             ),
           ),
         ],
@@ -168,31 +178,64 @@ class _SystemMessage extends StatelessWidget {
 class _InputBar extends ConsumerWidget {
   const _InputBar({
     required this.controller,
-    required this.isThinking,
     required this.onSend,
   });
 
   final TextEditingController controller;
-  final bool isThinking;
   final VoidCallback onSend;
+
+  void _startRecording(WidgetRef ref) {
+    ref.read(conversationViewModelProvider.notifier).startRecording();
+  }
+
+  void _stopRecording(WidgetRef ref) {
+    ref.read(conversationViewModelProvider.notifier).stopRecordingAndSend();
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(appSettingsProvider);
+    final vm = ref.watch(conversationViewModelProvider);
+    final scheme = Theme.of(context).colorScheme;
+    final isBusy = vm.isBusy;
+    final isRecording = vm.isRecording;
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
         child: Row(
           children: [
+            // Nút push-to-talk (ghi mic — Phase 2).
+            GestureDetector(
+              onLongPressStart: isBusy ? null : (_) => _startRecording(ref),
+              onLongPressEnd: isBusy
+                  ? null
+                  : (_) => _stopRecording(ref),
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isRecording
+                      ? scheme.error
+                      : scheme.primary,
+                ),
+                child: Icon(
+                  isRecording ? Icons.stop : Icons.mic,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: TextField(
                 controller: controller,
-                enabled: !isThinking,
+                enabled: !isBusy,
                 textInputAction: TextInputAction.send,
-                onSubmitted: (_) => isThinking ? null : onSend(),
+                onSubmitted: (_) => isBusy ? null : onSend(),
                 decoration: InputDecoration(
                   hintText: 'Nhập tiếng Nhật… (${settings.mode} / ${settings.jlptLevel})',
-                  suffixIcon: isThinking
+                  suffixIcon: isBusy
                       ? const Padding(
                           padding: EdgeInsets.all(14),
                           child: SizedBox(
@@ -207,11 +250,11 @@ class _InputBar extends ConsumerWidget {
             ),
             const SizedBox(width: 8),
             FilledButton(
-              onPressed: isThinking ? null : onSend,
+              onPressed: isBusy ? null : onSend,
               style: FilledButton.styleFrom(
                 shape: const CircleBorder(),
                 padding: const EdgeInsets.all(14),
-                backgroundColor: Theme.of(context).colorScheme.primary,
+                backgroundColor: scheme.primary,
               ),
               child: const Icon(Icons.send),
             ),

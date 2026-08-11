@@ -4,35 +4,40 @@
 
 - **Giao diện:** Flutter (Windows desktop / Web / Android / iOS)
 - **Backend:** FastAPI (local) — orchestrator + Gemini AI + SQLite
-- **Giọng nói (Phase 3+):** VOICEVOX (TTS) + RVC (voice conversion) + Live2D avatar
+- **Giọng nói (Phase 3–5):** VOICEVOX (TTS) + RVC (voice conversion) + lip-sync avatar
+- **Realtime (Phase 6):** nghiên cứu (research only), WS scaffold `/v2/live`
 
-> **Trạng thái hiện tại: Phase 1 hoàn thành** — text chat chạy end-to-end với chế độ
-> *mock* (không cần API key). Các Phase 2–6 (voice, TTS, RVC, avatar, realtime)
-> đã có khung sẵn trong code nhưng chưa triển khai.
+> **Trạng thái hiện tại: Phase 1–5 hoàn thành** — toàn pipeline chạy end-to-end:
+> nhập text hoặc nói (mic) → Gemini trả lời → VOICEVOX đọc → RVC đổi giọng
+> → avatar lip-sync theo audio. Cả 3 engine (Gemini/VOICEVOX/RVC) chạy chế độ
+> **mock** khi chưa cài, nên app test được ngay không cần bất kỳ key/engine nào.
 
 ---
 
 ## Kiến trúc
 
 ```
-┌─────────────────────┐     HTTP      ┌───────────────────────────────────────┐
-│  Flutter (UI/mic)   │  ───────────▶ │  FastAPI (backend local)              │
-│  · Text chat (P1)   │               │  · POST /v1/conversation/turn         │
-│  · History/Vocab    │  ◀─────────── │  · Gemini + JSON schema (mock mode)   │
-│  · Settings         │     JSON      │  · SQLite: sessions/turns/vocabulary  │
-└─────────────────────┘               └───────────────────────────────────────┘
-                                               │ (Phase 3+)
-                                     VOICEVOX · RVC worker · Live2D
+┌─────────────────────────┐   HTTP/multipart  ┌───────────────────────────────────────┐
+│  Flutter (UI + mic)     │  ───────────────▶ │  FastAPI (backend local)              │
+│  · Text chat (P1)       │                   │  · POST /v1/conversation/turn         │
+│  · Push-to-talk (P2)    │  ◀─────────────── │  · Gemini + JSON schema (mock mode)   │
+│  · Play audio (P3)      │   JSON + audio_url│  · SQLite: sessions/turns/vocabulary  │
+│  · History/Vocab/Set    │                   │  · WS /v2/live (P6 research)          │
+└─────────────────────────┘                   └───────────────────────────────────────┘
+   │ mic (P2)   │ just_audio (P3)   │ avatar (P5)          │
+   ▼            ▼                   ▼            VOICEVOX (P3) · RVC worker (P4) · lip-sync (P5)
 ```
 
-- **Flutter** giữ UI, mic, phát audio, avatar.
-- **FastAPI** đóng vai orchestrator: ghép prompt, gọi Gemini, lưu lịch sử, TTS.
+- **Flutter** giữ UI, mic (record 16kHz mono), phát audio (just_audio), avatar
+  (emotion + lip-sync theo `MouthCue`).
+- **FastAPI** đóng vai orchestrator: ghép prompt, gọi Gemini, lưu lịch sử,
+  TTS (VOICEVOX), voice conversion (RVC), tính mouth cues.
 - **SQLite** (`backend/data/miku.db`) lưu 5 bảng: `sessions`, `turns`,
   `vocabulary`, `turn_vocabulary`, `settings`.
 
 ## Cách chạy
 
-### 1. Backend (Phase 1)
+### 1. Backend
 
 Yêu cầu: **Python 3.11+**.
 
@@ -59,12 +64,18 @@ curl -X POST http://127.0.0.1:8000/v1/conversation/turn \
   -F "text=こんにちは" -F "mode=free_talk" -F "jlpt_level=N5"
 ```
 
-#### Dùng Gemini thật (tùy chọn)
+#### Bật engine thật (tùy chọn)
 
-1. Tạo **Gemini API key** tại [Google AI Studio](https://aistudio.google.com/apikey).
-   > ⚠️ Google đang chuyển sang **auth keys** — key Standard sẽ bị từ chối từ 09/2026.
-2. Điền `GEMINI_API_KEY=<key>` vào `backend/.env` và restart backend.
-   Chế độ tự chuyển sang **live**, `/health` báo `"gemini": true`.
+Pipeline chạy được ngay với mock, nhưng muốn giọng thật thì cài 3 engine:
+
+| Engine | Cách cài | Khi hoạt động `/health` báo |
+|---|---|---|
+| **Gemini** | Key tại [Google AI Studio](https://aistudio.google.com/apikey), điền `GEMINI_API_KEY` vào `backend/.env`, restart backend | `"gemini": true` |
+| **VOICEVOX** | Cài [VOICEVOX](https://voicevox.hiroshiba.jp/) (mở app → mặc định cổng 50021) | `"voicevox": true` |
+| **RVC** | Chạy worker RVC ở cổng 8010, set `RVC_WORKER_URL` (mặc định `http://127.0.0.1:8010/`) | `"rvc": true` |
+
+> ⚠️ Gemini: Google đang chuyển sang **auth keys** — key Standard sẽ bị từ chối
+> từ 09/2026. Xem [Google AI Studio](https://aistudio.google.com/apikey).
 
 ### 2. Flutter
 
@@ -85,15 +96,24 @@ Mở **Cài đặt** → nhấn **Kiểm tra máy chủ** để xác nhận kế
 
 ---
 
-## Tính năng hiện có (Phase 1)
+## Tính năng hiện có (Phase 1–5)
 
 - 💬 **Text chat với Miku** — nhập tiếng Nhật → Gemini trả lời kèm:
   - **reply_ja** — câu trả lời chính.
   - **correction_ja + explanation_vi** — sửa lỗi + giải thích tiếng Việt
     (chế độ *Sửa lỗi*).
-  - **emotion** — 😊 😄 😆 🤔 😳 😢 (ảnh hưởng biểu cảm avatar).
+  - **emotion** — 😊 😄 😆 🤔 😳 😢 (điều khiển biểu cảm avatar).
   - **vocabulary** — chip từ mới (word/reading/meaning_vi), tự lưu vào sổ.
-  - Avatar Miku hình tròn theme cyan + emoji cảm xúc (thay Live2D ở Phase 1).
+- 🎤 **Push-to-talk (Phase 2)** — giữ nút mic để nói → upload WAV 16kHz →
+  Gemini audio understanding transcribe → trả lời.
+- 🔊 **Giọng nói Miku (Phase 3)** — reply → **VOICEVOX** TTS → phát qua
+  just_audio. Khi VOICEVOX chưa cài: tự sinh WAV mock (tonal) nên pipeline
+  vẫn chạy đủ.
+- 🎵 **RVC voice conversion (Phase 4)** — chuyển giọng VOICEVOX qua worker RVC;
+  nếu RVC lỗi/tắt → fallback về giọng gốc (`rvc_fallback`), không crash.
+- 👄 **Lip-sync + avatar (Phase 5)** — backend tính `MouthCue` (RMS 40–60ms),
+  Flutter phát avatar mở/ngậm miệng đồng bộ audio. Khi có SDK Live2D thật chỉ
+  cần implement `Live2dBridge` (UI không đổi).
 - 🗂 **Lịch sử hội thoại** — danh sách phiên, xem lại từng lượt, xóa phiên.
 - 📖 **Sổ từ vựng** — từ đã học theo số lần gặp.
 - ⚙️ **Cài đặt** — server URL, chế độ học, JLPT level, bối cảnh Role Play;
@@ -101,9 +121,22 @@ Mở **Cài đặt** → nhấn **Kiểm tra máy chủ** để xác nhận kế
 
 ### State machine
 
-`idle → thinking → idle | error` (Phase 1). Bản đầy đủ cho Phase 2–6:
+Pipeline đầy đủ (Phase 2–5):
 `idle → recording → uploading → thinking → synthesizing → playing → idle`
 với lỗi: `mic_denied | network_error | gemini_error | tts_error | rvc_fallback`.
+Mỗi bước đều có status label trên màn hình ("Miku đang suy nghĩ…", "Đang phát…").
+
+### Chế độ engine
+
+| Engine | Nếu cài | Nếu chưa cài |
+|---|---|---|
+| Gemini | live (cần `GEMINI_API_KEY` trong `.env`) | mock (trả câu mẫu, vẫn parse JSON) |
+| VOICEVOX (port 50021) | TTS thật qua `/audio_query` + `/synthesis` | WAV mock 440Hz+880Hz |
+| RVC (port 8010) | convert qua `/convert` | fallback về giọng VOICEVOX gốc |
+| Live2D | chưa có SDK Flutter chính thức | emoji + mouth scale |
+
+`/health` báo trạng thái từng engine (`"gemini": true/false`, ...) để biết đang
+chạy live hay mock.
 
 ## Cấu trúc thư mục
 
@@ -114,27 +147,28 @@ backend/
     db/sqlite.py           # Schema 5 bảng
     schemas/               # Pydantic: ConversationResult, VocabItem...
     repositories/          # CRUD sessions/turns/vocabulary
-    services/gemini_service.py   # Gemini + JSON schema + mock
-    services/voicevox_service.py # KHUNG (Phase 3)
-    services/rvc_service.py      # KHUNG (Phase 4)
-    services/lipsync_service.py  # KHUNG (Phase 5)
-    api/                   # /v1/conversation/turn, /health, history, vocab
+    services/gemini_service.py   # Gemini + JSON schema + mock (text/audio)
+    services/voicevox_service.py # TTS: audio_query → synthesis + mock_wav
+    services/rvc_service.py      # convert qua worker + fallback
+    services/lipsync_service.py  # MouthCue: RMS 40–60ms trên wav
+    api/                   # /v1/conversation/turn, /v1/audio/{id}, /health,
+                           # history, vocab, /v2/live (realtime research)
 lib/
   app/         # app.dart, theme.dart (cyan Miku), router.dart
   core/        # config (server URL), errors (ApiException), network
   data/
     models/    # conversation_turn, session_record, vocabulary_record
-    services/  # api_service.dart (gọi FastAPI)
+    services/  # api_service.dart (sendText/sendAudio), audio_service.dart (record/play)
     repositories/  # conversation_repository, settings_repository
   features/
     home/            # màn hình chính
-    conversation/    # text chat + view model + widgets
+    conversation/    # text chat + push-to-talk + view model + widgets
     history/         # lịch sử phiên
     vocabulary/      # sổ từ vựng
     settings/        # cài đặt + kiểm tra máy chủ
-  avatar/        # avatar_controller.dart (Phase 5 sẽ thay bằng Live2D)
+  avatar/        # avatar_controller.dart + live2d_bridge.dart (lip-sync P5)
   main.dart
-test/            # widget test + integration test (skip khi không có backend)
+test/            # widget test + live integration test (cần backend chạy)
 ```
 
 ## Checklist các Phase
@@ -143,21 +177,16 @@ test/            # widget test + integration test (skip khi không có backend)
 |---|---|---|
 | **0** | Setup: cài đặt, health check, Gemini key | ✅ Xong |
 | **1** | Text chat: text → Gemini JSON → bubble | ✅ Xong |
-| **2** | Voice input: record → upload → transcribe | ⏳ Kế tiếp |
-| **3** | VOICEVOX: reply → wav → just_audio | 🔲 Khung sẵn |
-| **4** | RVC: worker warm, convert, fallback | 🔲 Khung sẵn |
-| **5** | Avatar: Live2D bridge, emotion, mouth cues | 🔲 Khung sẵn |
-| **6** | Realtime: Gemini Live + WebSocket | 🔲 Sau cùng |
+| **2** | Voice input: record → upload → transcribe | ✅ Xong |
+| **3** | VOICEVOX: reply → wav → just_audio | ✅ Xong (mock fallback) |
+| **4** | RVC: worker warm, convert, fallback | ✅ Xong (fallback) |
+| **5** | Avatar: emotion + lip-sync mouth cues | ✅ Xong (Live2D bridge chờ SDK) |
+| **6** | Realtime: Gemini Live + WebSocket | 🔬 Research only — WS scaffold `/v2/live` |
 
-Gợi ý cho **Phase 2** (voice input):
-
-```bash
-flutter pub add record
-```
-
-Sửa `backend/app/api/conversation.py`: thay đoạn
-`user_text = "（音声入力はPhase 2で対応）"` bằng lời gọi Gemini audio
-understanding để transcribe.
+**Phase 6** theo tài liệu (mục 14.1): Gemini Live hiện là Preview, dùng stateful
+WebSocket (PCM 16kHz in / 24kHz out). Giữ **push-to-talk là sản phẩm chính**;
+chỉ merge realtime nếu latency < ~1s. Khung `backend/app/api/realtime.py` đã có:
+nhận text event + PCM chunk, ack round-trip — đủ để test đường truyền WSS từ Flutter.
 
 ## Bảo mật
 
@@ -166,6 +195,8 @@ understanding để transcribe.
 - Chỉ bind `0.0.0.0` khi cần test từ điện thoại; không mở cổng ra internet.
 - Giới hạn kích thước audio upload (20 MB).
 - Retry Gemini với backoff khi gặp 429/5xx.
+- Audio tạm trong `backend/data/audio/` (TTL; không log raw audio).
+- Mic chỉ ghi khi người dùng giữ nút push-to-talk; xóa file tạm sau khi upload.
 
 ## License
 

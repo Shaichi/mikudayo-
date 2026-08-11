@@ -158,16 +158,34 @@ class GeminiService:
         level: JpLevel,
         summary: str,
         recent_turns: list[dict],
+        audio_bytes: Optional[bytes] = None,
+        audio_mime: str = "audio/wav",
     ) -> GeminiTurnOutput:
+        """Gọi Gemini với text (hoặc audio ở Phase 2+).
+
+        - `audio_bytes` != None: Gemini audio understanding để transcribe + reply
+          (mục 8 tài liệu [S3]).
+        - Mock mode: nếu có audio thì transcribe bằng chuỗi mẫu, vẫn trả reply.
+        """
         if self._mock:
+            if audio_bytes is not None:
+                user_text = "（音声入力・モック）こんにちは、元気ですか？"
             return _mock_output(user_text, mode, level)
 
         from google.genai import types
 
         try:
+            # Nội dung: text hoặc audio inline.
+            if audio_bytes is not None:
+                contents = [
+                    types.Part.from_bytes(data=audio_bytes, mime_type=audio_mime)
+                ]
+            else:
+                contents = user_text
+
             response = self._client.models.generate_content(
                 model=settings.GEMINI_MODEL,
-                contents=user_text,
+                contents=contents,
                 config=types.GenerateContentConfig(
                     system_instruction=self.build_prompt(mode, level, summary, recent_turns),
                     response_mime_type="application/json",

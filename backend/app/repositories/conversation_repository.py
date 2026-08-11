@@ -83,6 +83,11 @@ def get_turn(turn_id: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
+def update_turn_audio(turn_id: str, audio_path: str | None) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE turns SET audio_path=? WHERE id=?", (audio_path, turn_id))
+
+
 def update_session_summary(session_id: str, summary: str) -> None:
     with get_conn() as conn:
         conn.execute("UPDATE sessions SET summary=? WHERE id=?", (summary, session_id))

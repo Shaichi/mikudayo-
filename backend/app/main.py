@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import conversation, health, history
+from .api import conversation, health, history, realtime
 from .core.config import settings
 from .core.logging import setup_logging
 from .db.sqlite import init_db
@@ -42,6 +42,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(conversation.router)
 app.include_router(history.router)
+app.include_router(realtime.router)  # Phase 6 research — WS scaffold /v2/live
 
 
 @app.get("/")
@@ -50,5 +51,5 @@ def root() -> dict:
         "app": settings.APP_NAME,
         "docs": "/docs",
         "health": "/health",
-        "phase": "1",
+        "phase": "2-5 (realtime: research only)",
     }

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../../core/config/server_config.dart';
 import '../../core/errors/api_exception.dart';
@@ -85,6 +86,46 @@ class ApiService {
             body: body,
           )
           .timeout(ServerConfig.requestTimeout);
+    } on TimeoutException {
+      throw ApiException.timeout();
+    } catch (_) {
+      throw ApiException.network();
+    }
+    return ConversationResult.fromJson(await _decode(res));
+  }
+
+  /// Gửi audio (Phase 2): multipart upload -> backend transcribe + reply.
+  Future<ConversationResult> sendAudio({
+    required String baseUrl,
+    required List<int> audioBytes,
+    String filename = 'input.wav',
+    String mimeType = 'audio/wav',
+    String mode = 'free_talk',
+    String jlptLevel = 'N5',
+    String scenario = '',
+    String sessionId = '',
+  }) async {
+    final req = http.MultipartRequest(
+      'POST',
+      _uri(baseUrl, '/v1/conversation/turn'),
+    );
+    req.fields['mode'] = mode;
+    req.fields['jlpt_level'] = jlptLevel;
+    if (scenario.isNotEmpty) req.fields['scenario'] = scenario;
+    if (sessionId.isNotEmpty) req.fields['session_id'] = sessionId;
+    req.files.add(http.MultipartFile.fromBytes(
+      'audio',
+      audioBytes,
+      filename: filename,
+      contentType: MediaType.parse(mimeType),
+    ));
+
+    late http.Response res;
+    try {
+      final streamed = await _client
+          .send(req)
+          .timeout(const Duration(seconds: 60));
+      res = await http.Response.fromStream(streamed);
     } on TimeoutException {
       throw ApiException.timeout();
     } catch (_) {
