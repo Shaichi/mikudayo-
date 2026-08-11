@@ -26,7 +26,8 @@ class Settings:
 
     # --- Gemini ---
     GEMINI_API_KEY: str = _env("GEMINI_API_KEY", "")
-    GEMINI_MODEL: str = _env("GEMINI_MODEL", "gemini-2.5-flash")
+    # gemini-2.5-flash cũ trả 404 cho key mới; gemini-flash-latest không nhận audio.
+    GEMINI_MODEL: str = _env("GEMINI_MODEL", "gemini-3-flash-preview")
     GEMINI_MAX_TURNS: int = int(_env("GEMINI_MAX_TURNS", "8"))
     GEMINI_TEMPERATURE: float = float(_env("GEMINI_TEMPERATURE", "0.7"))
 

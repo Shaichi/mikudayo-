@@ -74,8 +74,11 @@ Pipeline chạy được ngay với mock, nhưng muốn giọng thật thì cài
 | **VOICEVOX** | Cài [VOICEVOX](https://voicevox.hiroshiba.jp/) (mở app → mặc định cổng 50021) | `"voicevox": true` |
 | **RVC** | Chạy worker RVC ở cổng 8010, set `RVC_WORKER_URL` (mặc định `http://127.0.0.1:8010/`) | `"rvc": true` |
 
-> ⚠️ Gemini: Google đang chuyển sang **auth keys** — key Standard sẽ bị từ chối
-> từ 09/2026. Xem [Google AI Studio](https://aistudio.google.com/apikey).
+> ⚠️ **Model Gemini**: mặc định `gemini-3-flash-preview` — model mới duy nhất
+> hỗ trợ **audio input + JSON schema + system_instruction** trên key hiện tại.
+> `gemini-2.5-flash` trả **404** cho key mới; `gemini-flash-latest` không nhận
+> audio (500 INTERNAL). Có thể đổi trong `backend/.env` (`GEMINI_MODEL`).
+> Google đang chuyển sang **auth keys** — key Standard sẽ bị từ chối từ 09/2026.
 
 ### 2. Flutter
 
