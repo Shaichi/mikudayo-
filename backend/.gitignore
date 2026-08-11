@@ -1,0 +1,9 @@
+# Backend
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+data/
+temp/
+*.wav
