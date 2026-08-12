@@ -86,10 +86,12 @@ Pipeline chạy được ngay với mock, nhưng muốn giọng thật thì cài
 > Hiện tại: `miku_mellow_rvc.pth` + `.index` (NoCrypt/miku_RVC). Đã verify
 > end-to-end: text → Gemini → VOICEVOX → RVC 2.5s, output 40kHz.
 
-> ⚠️ **Model Gemini**: mặc định `gemini-3-flash-preview` — model mới duy nhất
-> hỗ trợ **audio input + JSON schema + system_instruction** trên key hiện tại.
-> `gemini-2.5-flash` trả **404** cho key mới; `gemini-flash-latest` không nhận
-> audio (500 INTERNAL). Có thể đổi trong `backend/.env` (`GEMINI_MODEL`).
+> ⚠️ **Model Gemini**: mặc định `gemini-3.5-flash-lite` — model hỗ trợ
+> **audio input + JSON schema + system_instruction** trên key hiện tại.
+> Lưu ý: `gemini-2.5-flash` trả **404** cho key mới; `gemini-flash-latest`
+> không nhận audio (500 INTERNAL); `gemini-3-flash-preview` hết quota 20/ngày
+> nhanh (429 RESOURCE_EXHAUSTED) → đã chuyển sang 3.5-flash-lite.
+> Có thể đổi trong `backend/.env` (`GEMINI_MODEL`).
 > Google đang chuyển sang **auth keys** — key Standard sẽ bị từ chối từ 09/2026.
 
 ### 2. Flutter
