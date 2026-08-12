@@ -52,3 +52,9 @@ __pycache__/
 *.pyc
 *.wav
 .claude/
+
+# Backend RVC (Phase 4)
+# - .venv-rvc: môi trường Python 3.10 riêng cho RVC (fairseq)
+# - models/: model giọng Miku (.pth/.index) tải từ HuggingFace — nặng, không commit
+backend/.venv-rvc/
+backend/models/

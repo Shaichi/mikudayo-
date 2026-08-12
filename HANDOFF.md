@@ -1,8 +1,9 @@
 # BÀN GIAO — Miku Japanese Conversation (Flutter + Gemini + VOICEVOX + RVC + Live2D)
 
 > **Trạng thái:** Phiên 2 (2026-08-12) đã hoàn thành **Phase 0 → Phase 5** +
-> scaffold **Phase 6 (research)**. Toàn pipeline chạy end-to-end với mock
-> fallback cho cả 3 engine. Đã push lên GitHub `Shaichi/mikudayo-` (branch main).
+> scaffold **Phase 6 (research)**. Cả 3 engine thật (Gemini/VOICEVOX/RVC) đã
+> verify end-to-end — `voice_mode:"rvc"`, giọng Miku thật. Đã push lên GitHub
+> `Shaichi/mikudayo-` (branch main).
 > Tài liệu gốc: `Tai_lieu_du_an_Miku_Japanese_Conversation_Flutter (1).docx`.
 
 ---
@@ -122,10 +123,33 @@ Full pipeline thử thật (mock): `POST turn text → reply_ja + emotion + audi
 - `flutter build windows --debug` → ✅ build OK.
 - Live WS test `/v2/live` round-trip OK.
 
-### 1.5.5 Git
+### 1.5.5 RVC live — VERIFIED ✅ (3 engine thật)
+
+Cài **cả 3 engine chạy thật** và verify end-to-end (text → Gemini → VOICEVOX → RVC):
+
+| Thành phần | Trạng thái live |
+|---|---|
+| Gemini | ✅ `gemini:true`, model `gemini-3-flash-preview` (key thật) |
+| VOICEVOX | ✅ `voicevox:true` (app 0.25.2, port 50021, speaker 0) |
+| RVC | ✅ `rvc:true` (worker port 8010, model `miku_mellow_rvc.pth`, GPU) |
+
+- **RVC worker**: `backend/rvc_worker.py` (port 8010) — môi trường riêng
+  `.venv-rvc` (Python 3.10, fairseq không chạy 3.11). Cần `pip<=24.0` nếu
+  omegaconf lỗi metadata. Model `miku_mellow_rvc.pth` + `.index` trong
+  `backend/models/` (gitignore).
+- **Verify thật**: `POST /v1/conversation/turn` text → `voice_mode:"rvc"`,
+  audio download = WAV **40kHz mono 7.28s 582KB**; RVC worker log
+  `convert OK: 350252 -> 582444 bytes in 2.57s` (GPU, lần đầu ~66s cold→warm).
+- Bước vẽ: `<source>` (24kHz VOICEVOX) → `/convert` → RVC output (40kHz),
+  fallback về source.wav khi worker lỗi (`rvc_fallback`).
+- RVC API: `set_params(f0up_key=0, f0method="rmvpe")` rồi `infer_file(in,out)`
+  — `infer_file` KHÔNG nhận kwargs.
+
+### 1.5.6 Git
 
 - Repo `https://github.com/Shaichi/mikudayo-.git`, branch `main`, đã push.
-- `.gitignore` bổ sung: `.env`, `data/`, `audio/`, `build/`, `.claude/`.
+- `.gitignore` bổ sung: `.env`, `data/`, `audio/`, `build/`, `.claude/`,
+  `backend/.venv-rvc/`, `backend/models/`.
 
 ---
 
@@ -133,7 +157,8 @@ Full pipeline thử thật (mock): `POST turn text → reply_ja + emotion + audi
 
 > Phase 2–5 đã xong. Chỉ còn việc *optional* dưới đây.
 
-### Defer A — Cài engine thật để nghe giọng thật
+### Defer A — cài engine thật (đã xong ✅, giữ lại để reference)
+> Đã cài + verify 3 engine thật ở mục 1.5.5. Nếu build trên máy mới:
 - Cài **VOICEVOX** (cổng 50021) → `/health` báo `voicevox:true`; giọng Miku-like.
 - Chạy **RVC worker** (cổng 8010) + load model → `rvc:true`, nghe giọng chuyển đổi.
 - Điền `GEMINI_API_KEY` vào `.env` → trả lời + transcribe thật (thay mock).
