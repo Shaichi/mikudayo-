@@ -61,11 +61,13 @@ pip install faster-whisper    # STT (tải model lần đầu ~500MB, tự độ
 
 ```bash
 cd backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+# Backend chính PHẢI dùng hermes venv (có uvicorn):
+"C:\Users\pc\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 - `--host 0.0.0.0` → cho phép **điện thoại cùng Wi-Fi** kết nối (dùng IP máy). Chỉ muốn local: `--host 127.0.0.1`.
-- Không dùng `--reload` khi demo trên điện thoại (tránh sinh 2 process tranh port).
+- **KHÔNG dùng `python` (PATH) hay uv `python.exe`** cho backend — môi trường đó **không có uvicorn** (lỗi `No module named uvicorn`). Backend chạy bằng **hermes venv**.
+- **KHÔNG dùng `--reload`** — nó tạo 2 process song sinh (reloader cha + worker con) giữ cùng 1 port, lãng phí ~580MB RAM. Dừng hẳn rồi khởi động lại nếu sửa code.
 
 ### Bước 4 — Kiểm tra
 
@@ -127,7 +129,9 @@ cd backend
 ```
 
 > ⚠️ **Không chạy `python rvc_worker.py`** — file không có `__main__`, sẽ thoát im lặng.
-> Phải qua uvicorn.
+> Phải qua uvicorn. **Không dùng `--reload`** (tránh 2 process cùng port 8010).
+> Lần header đầu sau khi khởi động: `/health` báo `model:"not-loaded"` ~6s rồi
+> `miku_mellow_rvc.pth`; convert đầu tiên ~24s (cold→warm), sau ~2.5s/lượt.
 
 Nếu chưa có `.venv-rvc` (máy khác):
 
