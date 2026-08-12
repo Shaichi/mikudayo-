@@ -32,6 +32,10 @@ class Settings:
     GEMINI_MODEL: str = _env("GEMINI_MODEL", "gemini-3.5-flash-lite")
     GEMINI_MAX_TURNS: int = int(_env("GEMINI_MAX_TURNS", "8"))
     GEMINI_TEMPERATURE: float = float(_env("GEMINI_TEMPERATURE", "0.7"))
+    # Gemini Thinking: 'minimal' | 'low' | 'medium' | 'high' | '' (tắt).
+    # Tài liệu xác nhận gemini-3.5-flash-lite HỖ TRỢ thinking (default minimal).
+    # Chỉ tốn thời gian tính toán, KHÔNG tốn phí/thêm quota.
+    GEMINI_THINKING: str = _env("GEMINI_THINKING", "minimal")
 
     # --- VOICEVOX ---
     VOICEVOX_BASE_URL: str = _env("VOICEVOX_BASE_URL", "http://127.0.0.1:50021")

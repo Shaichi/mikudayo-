@@ -241,15 +241,22 @@ class GeminiService:
             contents = types.UserContent(parts=[types.Part(text=user_text)])
             schema = SCHEMA_JSON
 
+            gen_config = types.GenerateContentConfig(
+                system_instruction=self.build_prompt(mode, level, summary, recent_turns, scenario),
+                response_mime_type="application/json",
+                response_schema=schema,
+                temperature=settings.GEMINI_TEMPERATURE,
+            )
+            # Gemini Thinking: bật khi GEMINI_THINKING != "" (minimal/low/medium/high).
+            # Model 3.5-flash-lite hỗ trợ thinking; đã verify JSON schema không vỡ.
+            thinking = settings.GEMINI_THINKING.strip().lower()
+            if thinking in {"minimal", "low", "medium", "high"}:
+                gen_config.thinking_config = types.ThinkingConfig(thinking_level=thinking)
+
             response = self._client.models.generate_content(
                 model=settings.GEMINI_MODEL,
                 contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=self.build_prompt(mode, level, summary, recent_turns, scenario),
-                    response_mime_type="application/json",
-                    response_schema=schema,
-                    temperature=settings.GEMINI_TEMPERATURE,
-                ),
+                config=gen_config,
             )
             raw = response.text
             logger.debug("Gemini raw output: %s", raw[:500])
