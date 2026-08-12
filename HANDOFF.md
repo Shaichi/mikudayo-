@@ -8,6 +8,56 @@
 
 ---
 
+## 0. TÍCH HỢP VRM 3D (mới — Phiên 3)
+
+> **Trạng thái:** Model Miku 3D thật (VRM 1.0) render trong app qua
+> WebView2 + three.js. VERIFIED — model load, emotion + lip-sync + blink hoạt động.
+
+### 0.1 Cách hoạt động
+- `web/vrm/index.html` — trang renderer dùng `three.js` + `@pixiv/three-vrm`
+  (CDN qua importmap). Load model từ `web/vrm-model/`.
+- `web/vrm-model/茶味式　初音ミク vrm 1.0.vrm` — model thật (26MB) được Flutter map
+  thành host `app.local` qua `addVirtualHostNameMapping` (WebView2 Windows).
+- `lib/avatar/vrm_avatar.dart` — widget `VrmAvatar` (ConsumerStatefulWidget): khởi
+  tạo WebviewController, listen `webMessage` cho `{type:'loaded'}`, watch
+  `avatarControllerProvider` và `postWebMessage` emotion/mouth lên JS.
+- UI: `conversation_screen.dart` `_Header` dùng `VrmAvatar` thay `MikuAvatar`(emoji).
+
+### 0.2 Xử lý emotion + lip-sync (JS trong index.html)
+- **Emotion**: `applyEmotion(emo)` map `MikuEmotion` → preset VRM
+  (neutral/happy/excited/thinking/embarrassed/sad → neutral/happy/happy/relaxed/happy/sad),
+  reset preset cũ, set preset mới = 1.
+- **Lip-sync**: `mouth` → `targetMouth` → nội suy → `expressionManager.setValue('aa', ...)`.
+- **Blink**: timer 3s set `blink` 1 rồi 0.
+
+### 0.3 Gotcha quan trọng (đã chạy thật)
+- **Không dùng `import` URL trực tiếp** cho CDN trong ESM — WebView2 Virtual Host
+  Mapping origin chặn direct-URL ESM import (script không chạy). **Phải dùng importmap**.
+- Bug từng gặp: `new THREE.GLTFLoader()` sai (GLTFLoader không nằm trong THREE
+  namespace) → đúng `new GLTFLoader()` (import riêng từ `three/addons/loaders/`).
+- `addVirtualHostNameMapping` phải gọi SAU `initialize()` (dùng `_methodChannel` late).
+
+### 0.4 License model — KHÔNG được phân phối bản gốc
+- Model `茶味式　初音ミク` (author: nao_0902 / tyami-store booth). License đọc từ
+  `利用規約/20241028105600vn3license_en.pdf` (đã extract full text).
+- ✅ Personal use, integration vào software (R), chỉnh file format — **Permitted**.
+- ⚠️ **Redistribution original version (M) + modified (N) — PROHIBITED.**
+  → **KHÔNG commit model lên GitHub public.** Chỉ commit nếu repo PRIVATE.
+  File license gốc giữ trong thư mục `茶味式　初音ミク/` (gitignored) — KHÔNG commit.
+- Repo hiện tại: **PRIVATE** `Shaichi/mikudayo-` → model trong `web/vrm-model/`
+  an toàn khi commit (chỉ mình bạn truy cập).
+
+### 0.5 Build / chạy
+- `flutter build windows --debug` → `build/windows/x64/runner/Debug/mikudayo.exe`.
+- WebView2 runtime có sẵn trên Windows 11. CDN cần internet lần đầu (three.js/three-vrm).
+- `flutter analyze` → 0 issues. Test live backend vẫn chạy độc lập.
+
+### 0.6 Hướng tiếp theo đã chốt
+- Sau VRM: **redesign toàn app theo "Dark hologram Futuristic"** (UI + cải tiến UX,
+  backend không đổi). User đã chọn scope này.
+
+---
+
 ## 1. ĐÃ HOÀN THÀNH (Phiên 2 — Phase 0–5 + Phase 6 scaffold)
 
 > Mục 1.1/1.2 giữ lại từ đầu phiên (Phase 0+1). Mục 1.5 trở đi là phần mới

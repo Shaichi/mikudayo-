@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Miku VRM Renderer</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden; background: transparent;
+  }
+  #app { width: 100%; height: 100%; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #loading {
+    position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center;
+    color: #22D3EE; font-family: sans-serif; font-size: 14px;
+    text-shadow: 0 0 8px rgba(34,211,238,.6);
+    background: rgba(5,8,18,0.3); z-index: 10;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="loading">Miku loading…</div>
+
+<!-- Importmap: đã chứng minh hoạt động trong WebView2 Virtual Host (script chạy tới
+     init). Không dùng import URL trực tiếp — WebView2 chặn direct-URL ESM import
+     từ origin khác. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { VRMLoaderPlugin } from 'https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.1.0/lib/three-vrm.module.js';
+
+const MODEL_URL = 'http://app.local/vrm-model/茶味式　初音ミク vrm 1.0.vrm';
+
+let vrm = null;
+let clock = new THREE.Clock();
+let mouthWeight = 0.0;
+let targetMouth = 0.0;
+let blinkTimer = 0;
+
+// Gửi log diagnostic lên Flutter (webview_windows không expose console).
+// Chỉ log để verify load; giữ gọn để không spam.
+function postLog(msg) {
+  if (window.chrome && window.chrome.webview) {
+    window.chrome.webview.postMessage({ type: 'log', message: String(msg) });
+  }
+}
+
+function init() {
+  try {
+    const app = document.getElementById('app');
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 20);
+    camera.position.set(0, 0.9, 1.8);
+    camera.lookAt(0, 0.8, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    app.appendChild(renderer.domElement);
+
+    // Ánh sáng nhẹ
+    const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+    dir.position.set(1, 2, 2);
+    scene.add(dir);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+
+    // Load VRM — dùng GLTFLoader import riêng (KHÔNG nằm trong THREE namespace).
+    const loader = new GLTFLoader();
+    loader.crossOrigin = 'anonymous';
+    loader.register(parser => new VRMLoaderPlugin(parser));
+    loader.load(
+      MODEL_URL,
+      (gltf) => {
+        vrm = gltf.userData.vrm;
+        scene.add(vrm.scene);
+        // Gửi thông báo đã load cho Flutter
+        if (window.chrome && window.chrome.webview) {
+          window.chrome.webview.postMessage({ type: 'loaded' });
+        }
+        document.getElementById('loading').style.display = 'none';
+        postLog('VRM loaded');
+      },
+      undefined,
+      (err) => {
+        console.error('VRM load error', err);
+        postLog('VRM load FAILED: ' + (err && err.message ? err.message : err));
+        document.getElementById('loading').textContent = 'Load failed: ' + (err && err.message ? err.message : err);
+      }
+    );
+
+    // Nhận message từ Flutter
+    if (window.chrome && window.chrome.webview) {
+      window.chrome.webview.addEventListener('message', (event) => {
+        try {
+          const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+          handleMessage(data);
+        } catch (e) { console.error('bad message', e); }
+      });
+    }
+
+    function handleMessage(data) {
+      if (data.type === 'emotion') {
+        applyEmotion(data.value);
+      } else if (data.type === 'mouth') {
+        targetMouth = Number(data.value) || 0;
+      }
+    }
+
+    function applyEmotion(emo) {
+      if (!vrm) return;
+      const manager = vrm.expressionManager;
+      if (!manager) return;
+      // Map cảm xúc Miku → preset VRM
+      const map = {
+        neutral: 'neutral',
+        happy: 'happy',
+        excited: 'happy',
+        thinking: 'relaxed',
+        embarrassed: 'happy',
+        sad: 'sad',
+      };
+      const preset = map[emo] || 'neutral';
+      // Reset tất cả preset về 0 trước khi set
+      for (const p of ['happy','angry','sad','relaxed','surprised','neutral','aa','ih','ou','ee','oh']) {
+        manager.setValue(p, 0);
+      }
+      manager.setValue(preset, 1);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+
+      if (vrm) {
+        // Lip-sync: mở miệng theo mouthWeight (0..1) qua viseme aa (nội suy mượt)
+        mouthWeight += (targetMouth - mouthWeight) * 0.3;
+        vrm.expressionManager.setValue('aa', mouthWeight);
+
+        // Nhấp nháy mắt
+        blinkTimer += delta;
+        if (blinkTimer > 3.0) {
+          vrm.expressionManager.setValue('blink', 1);
+          if (blinkTimer > 3.1) {
+            vrm.expressionManager.setValue('blink', 0);
+            blinkTimer = 0;
+          }
+        }
+
+        vrm.update(delta);
+      }
+
+      renderer.render(scene, camera);
+    }
+    animate();
+  } catch (e) {
+    postLog('init EXCEPTION: ' + (e && e.stack ? e.stack : e));
+  }
+}
+
+window.addEventListener('resize', () => {});
+
+init();
+</script>
+</body>
+</html>

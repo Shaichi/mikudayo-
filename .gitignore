@@ -53,6 +53,11 @@ __pycache__/
 *.wav
 .claude/
 
+# VRM model gốc (thư mục tải về) — không đẩy bản gốc .vroid/.vrm, chỉ đẩy bản
+# đã dùng trong web/vrm-model/ (xem HANDOFF.md, mục License).
+茶味式　初音ミク/
+assets/vrm/
+
 # Backend RVC (Phase 4)
 # - .venv-rvc: môi trường Python 3.10 riêng cho RVC (fairseq)
 # - models/: model giọng Miku (.pth/.index) tải từ HuggingFace — nặng, không commit

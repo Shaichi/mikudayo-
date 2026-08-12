@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../avatar/avatar_controller.dart';
-import '../../data/models/conversation_turn.dart';
+import '../../avatar/vrm_avatar.dart';
 import '../../data/services/api_service.dart';
 import 'conversation_view_model.dart';
 import 'widgets/chat_bubble.dart';
-import 'widgets/miku_avatar.dart';
 
 /// Màn hình hội thoại — text chat với Miku (Phase 1).
 class ConversationScreen extends ConsumerStatefulWidget {
@@ -49,7 +47,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   @override
   Widget build(BuildContext context) {
     final vm = ref.watch(conversationViewModelProvider);
-    final avatar = ref.watch(avatarControllerProvider);
 
     // Cuộn xuống khi có tin nhắn mới.
     _scrollToBottom();
@@ -71,12 +68,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       ),
       body: Column(
         children: [
-          // Avatar + trạng thái.
-          _Header(
-            emotion: avatar.emotion,
-            mouthOpen: avatar.mouthOpen,
-            status: vm.statusLabel,
-          ),
+          // Avatar 3D (VRM) + trạng thái.
+          _Header(status: vm.statusLabel),
           const Divider(height: 1),
           // Danh sách tin nhắn.
           Expanded(
@@ -109,14 +102,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({
-    required this.emotion,
-    required this.mouthOpen,
-    required this.status,
-  });
+  const _Header({required this.status});
 
-  final MikuEmotion emotion;
-  final double mouthOpen;
   final String status;
 
   @override
@@ -125,7 +112,9 @@ class _Header extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
         children: [
-          MikuAvatar(emotion: emotion, mouthOpen: mouthOpen, radius: 42),
+          // Avatar 3D thật (VRM qua WebView). Không cần emotion/mouthOpen —
+          // VrmAvatar tự đọc avatarControllerProvider.
+          const VrmAvatar(),
           const SizedBox(height: 8),
           Text(
             status,
