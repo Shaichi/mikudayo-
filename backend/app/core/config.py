@@ -26,16 +26,24 @@ class Settings:
 
     # --- Gemini ---
     GEMINI_API_KEY: str = _env("GEMINI_API_KEY", "")
-    # gemini-2.5-flash trả 404 cho key mới; gemini-flash-latest không nhận audio;
-    # gemini-3.5-flash-lite không nhận audio (500); gemini-3-flash-preview hết quota
-    # 429 nhanh. gemini-3.5-flash: audio + JSON schema, quota riêng.
-    GEMINI_MODEL: str = _env("GEMINI_MODEL", "gemini-3.5-flash")
+    # Audio được transcribe bằng faster-whisper local trước khi gọi Gemini →
+    # Gemini chỉ nhận text → gemini-3.5-flash-lite (nhanh, nhẹ, quota rộng).
+    # Lưu ý: 3.5-flash-lite KHÔNG nhận audio trực tiếp (500); 3-flash-preview hết quota 429.
+    GEMINI_MODEL: str = _env("GEMINI_MODEL", "gemini-3.5-flash-lite")
     GEMINI_MAX_TURNS: int = int(_env("GEMINI_MAX_TURNS", "8"))
     GEMINI_TEMPERATURE: float = float(_env("GEMINI_TEMPERATURE", "0.7"))
 
     # --- VOICEVOX ---
     VOICEVOX_BASE_URL: str = _env("VOICEVOX_BASE_URL", "http://127.0.0.1:50021")
     VOICEVOX_SPEAKER_ID: int = int(_env("VOICEVOX_SPEAKER_ID", "0"))
+
+    # --- STT (faster-whisper, Phase 2+) ---
+    WHISPER_MODEL: str = _env("WHISPER_MODEL", "small")
+    WHISPER_LANGUAGE: str = _env("WHISPER_LANGUAGE", "ja")
+
+    # --- STT (faster-whisper, Phase 2+) ---
+    WHISPER_MODEL: str = _env("WHISPER_MODEL", "small")
+    WHISPER_LANGUAGE: str = _env("WHISPER_LANGUAGE", "ja")
 
     # --- RVC ---
     RVC_WORKER_URL: str = _env("RVC_WORKER_URL", "http://127.0.0.1:8010")

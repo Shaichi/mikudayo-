@@ -71,6 +71,7 @@ Pipeline chạy được ngay với mock, nhưng muốn giọng thật thì cài
 | Engine | Cách cài | Khi hoạt động `/health` báo |
 |---|---|---|
 | **Gemini** | Key tại [Google AI Studio](https://aistudio.google.com/apikey), điền `GEMINI_API_KEY` vào `backend/.env`, restart backend | `"gemini": true` |
+| **STT (Whisper)** | `pip install faster-whisper` → tải model lần đầu (~500MB, tự động). Đổi cỡ trong `.env` (`WHISPER_MODEL`) | log "Whisper init" |
 | **VOICEVOX** | Cài [VOICEVOX](https://voicevox.hiroshiba.jp/) (mở app → mặc định cổng 50021) | `"voicevox": true` |
 | **RVC** | Chạy worker RVC ở cổng 8010, set `RVC_WORKER_URL` (mặc định `http://127.0.0.1:8010/`) | `"rvc": true` |
 
@@ -86,14 +87,13 @@ Pipeline chạy được ngay với mock, nhưng muốn giọng thật thì cài
 > Hiện tại: `miku_mellow_rvc.pth` + `.index` (NoCrypt/miku_RVC). Đã verify
 > end-to-end: text → Gemini → VOICEVOX → RVC 2.5s, output 40kHz.
 
-> ⚠️ **Model Gemini**: mặc định `gemini-3.5-flash` — model hỗ trợ **cả
-> audio input + JSON schema + system_instruction** trên key hiện tại (mic
-> upload chạy được). Lưu ý các model khác không dùng được:
-> `gemini-2.5-flash` trả **404** cho key mới; `gemini-flash-latest` &
-> `gemini-3.5-flash-lite` **không nhận audio** (500 INTERNAL); `gemini-3-flash-preview`
-> hết quota 20/ngày nhanh (429 RESOURCE_EXHAUSTED). Đổi được trong
-> `backend/.env` (`GEMINI_MODEL`). Google đang chuyển sang **auth keys** —
-> key Standard sẽ bị từ chối từ 09/2026.
+> ⚠️ **Model Gemini**: mặc định `gemini-3.5-flash-lite` — **text-only** (nhanh +
+> nhẹ + quota rộng). Giọng nói từ mic được **transcribe bằng faster-whisper
+> local** trước, rồi mới gửi text vào Gemini — nên không cần model hỗ trợ audio.
+> Lưu ý: `gemini-2.5-flash` trả **404** cho key mới; `gemini-3.5-flash-lite`
+> KHÔNG nhận audio trực tiếp (500 INTERNAL) nhưng text OK; `gemini-3-flash-preview`
+> hết quota 20/ngày nhanh (429). Đổi được trong `backend/.env` (`GEMINI_MODEL`).
+> Google đang chuyển sang **auth keys** — key Standard sẽ bị từ chối từ 09/2026.
 
 ### 2. Flutter
 
@@ -123,7 +123,8 @@ Mở **Cài đặt** → nhấn **Kiểm tra máy chủ** để xác nhận kế
   - **emotion** — 😊 😄 😆 🤔 😳 😢 (điều khiển biểu cảm avatar).
   - **vocabulary** — chip từ mới (word/reading/meaning_vi), tự lưu vào sổ.
 - 🎤 **Push-to-talk (Phase 2)** — giữ nút mic để nói → upload WAV 16kHz →
-  Gemini audio understanding transcribe → trả lời.
+  **faster-whisper** transcribe → gửi text vào Gemini → trả lời (không cần
+  model Gemini hỗ trợ audio).
 - 🔊 **Giọng nói Miku (Phase 3)** — reply → **VOICEVOX** TTS → phát qua
   just_audio. Khi VOICEVOX chưa cài: tự sinh WAV mock (tonal) nên pipeline
   vẫn chạy đủ.
@@ -149,6 +150,7 @@ Mỗi bước đều có status label trên màn hình ("Miku đang suy nghĩ…
 | Engine | Nếu cài | Nếu chưa cài |
 |---|---|---|
 | Gemini | live (cần `GEMINI_API_KEY` trong `.env`) | mock (trả câu mẫu, vẫn parse JSON) |
+| STT (Whisper) | transcribe thật giọng nói → text | (audio rỗng → báo "không nghe rõ") |
 | VOICEVOX (port 50021) | TTS thật qua `/audio_query` + `/synthesis` | WAV mock 440Hz+880Hz |
 | RVC (port 8010) | ✅ convert qua `/convert` (model Miku, GPU) | fallback về giọng VOICEVOX gốc |
 | Live2D | chưa có SDK Flutter chính thức | emoji + mouth scale |

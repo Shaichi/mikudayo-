@@ -206,9 +206,17 @@ class _InputBar extends ConsumerWidget {
         child: Row(
           children: [
             // Nút push-to-talk (ghi mic — Phase 2).
-            GestureDetector(
-              onLongPressStart: isBusy ? null : (_) => _startRecording(ref),
-              onLongPressEnd: isBusy
+            // Dùng Listener thay GestureDetector long-press: onPointerDown bắt đầu
+            // ghi, onPointerUp/onPointerCancel dừng + gửi. Đảm bảo khi thả tay (kể cả
+            // trượt ra ngoài nút) vẫn gửi được — không "cứ ghi âm tiếp".
+            Listener(
+              onPointerDown: isBusy
+                  ? null
+                  : (_) => _startRecording(ref),
+              onPointerUp: isBusy
+                  ? null
+                  : (_) => _stopRecording(ref),
+              onPointerCancel: isBusy
                   ? null
                   : (_) => _stopRecording(ref),
               child: Container(

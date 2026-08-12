@@ -178,8 +178,12 @@ class GeminiService:
     ) -> GeminiTurnOutput:
         """Gọi Gemini với text (hoặc audio ở Phase 2+).
 
-        - `audio_bytes` != None: Gemini audio understanding để transcribe + reply
-          (mục 8 tài liệu [S3]).
+        - `audio_bytes` != None:
+          1. Transcribe bằng faster-whisper (local, không key) → text.
+          2. Gửi text đó vào Gemini (text-only, schema đầy đủ).
+          => Không phụ thuộc model Gemini có hỗ trợ audio hay không.
+          Nếu Whisper không ra text (lỗi) → fallback gửi audio thẳng vào Gemini
+          bằng schema nhỏ (AUDIO_SCHEMA_JSON).
         - Mock mode: nếu có audio thì transcribe bằng chuỗi mẫu, vẫn trả reply.
         """
         if self._mock:
@@ -189,18 +193,21 @@ class GeminiService:
 
         from google.genai import types
 
-        try:
-            # Nội dung: text hoặc audio inline.
-            if audio_bytes is not None:
-                contents = [
-                    types.Part.from_bytes(data=audio_bytes, mime_type=audio_mime)
-                ]
-            else:
-                contents = user_text
+        # --- Phase 2+: audio → text bằng Whisper (bên thứ 3 local) ---
+        # Whisper transcribe trước → gọi Gemini text-only (3.5-flash-lite).
+        # Không gửi audio thẳng Gemini vì model text-only sẽ 500.
+        if audio_bytes is not None:
+            from . import stt_service
 
-            # Audio input + schema to → model mới lỗi 500 INTERNAL. Với audio
-            # ta dùng schema nhỏ (transcript/reply/emotion), còn text thì đủ.
-            schema = AUDIO_SCHEMA_JSON if audio_bytes is not None else SCHEMA_JSON
+            user_text = stt_service.transcribe_audio(audio_bytes)
+            if not user_text.strip():
+                # Whisper không nghe được giọng nói (rỗng/lỗi) → báo lỗi thân thiện.
+                logger.warning("Whisper không transcribe được audio, trả lỗi.")
+                raise ValueError("Không nghe rõ bạn nói gì. Hãy thử lại gần mic hơn.")
+
+        try:
+            contents = user_text
+            schema = SCHEMA_JSON
 
             response = self._client.models.generate_content(
                 model=settings.GEMINI_MODEL,

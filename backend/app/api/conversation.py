@@ -98,6 +98,9 @@ async def conversation_turn(
         )
     except ValidationError:
         raise HTTPException(502, "Gemini trả JSON không đúng schema.")
+    except ValueError as exc:
+        # Whisper không nghe được giọng nói → 400 với lời nhắc thân thiện.
+        raise HTTPException(400, str(exc))
     except Exception as exc:
         logger.error("Gemini lỗi: %s", exc)
         raise HTTPException(502, "Không gọi được Gemini.")

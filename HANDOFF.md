@@ -85,7 +85,7 @@ lib/
 
 | Thành phần | File | Trạng thái |
 |---|---|---|
-| Audio upload + transcribe | `app/api/conversation.py` (field `audio`), `gemini_service.generate_turn(audio_bytes)` | ✅ mock trả `（音声入力・モック）…`; live gửi `types.Part.from_bytes` |
+| Audio upload + transcribe | `app/api/conversation.py` (field `audio`), `gemini_service.generate_turn(audio_bytes)` | ✅ mock trả `（音声入力・モック）…`; live: **faster-whisper transcribe → Gemini text** |
 | TTS | `services/voicevox_service.py` `synthesize()` = `/audio_query` → `/synthesis`; `mock_wav()` 440+880Hz khi engine tắt | ✅ |
 | RVC | `services/rvc_service.py` `convert()` POST `/convert`; fallback source.wav khi worker lỗi | ✅ |
 | Lip-sync | `services/lipsync_service.py` RMS 50ms → `MouthCue{t_ms,mouth}` | ✅ |
@@ -95,6 +95,17 @@ lib/
 Full pipeline thử thật (mock): `POST turn text → reply_ja + emotion + audio_url +
 16 mouth_cues`, tải audio về = WAV RIFF hợp lệ. `sendAudio` upload → transcript mock
 + reply + cues.
+
+### 1.5.2.5 STT faster-whisper (Phase 2+) — VERIFIED ✅
+
+- `pip install faster-whisper` + `app/services/stt_service.py` (transcribe WAV → text).
+- Pipeline: **audio mic → Whisper transcribe → Gemini text-only → reply → TTS → RVC**.
+  → KHÔNG cần model Gemini hỗ trợ audio → dùng `gemini-3.5-flash-lite` (nhanh/nhẹ).
+- Model `small` (~500MB), device tự chọn (CUDA/CPU), `WHISPER_LANGUAGE=ja`.
+- Audio rỗng/không nghe rõ → `400 "Không nghe rõ bạn nói gì."` (thân thiện).
+- Verified: VOICEVOX 発話 "こんにちは…" → Whisper transcribe chính xác
+  `こんにちは私はミクです日本語を練習しましょう` → Gemini reply → voice_mode=rvc.
+- Log UTF-8 fix trong `core/logging.py` (Windows console cp1252 gây UnicodeEncodeError).
 
 ### 1.5.2 Flutter Phase 2–5 — XONG ✅
 
@@ -129,7 +140,7 @@ Cài **cả 3 engine chạy thật** và verify end-to-end (text → Gemini → 
 
 | Thành phần | Trạng thái live |
 |---|---|
-| Gemini | ✅ `gemini:true`, model `gemini-3-flash-preview` (key thật) |
+| Gemini | ✅ `gemini:true`, model `gemini-3.5-flash-lite` (key thật, text-only + Whisper STT) |
 | VOICEVOX | ✅ `voicevox:true` (app 0.25.2, port 50021, speaker 0) |
 | RVC | ✅ `rvc:true` (worker port 8010, model `miku_mellow_rvc.pth`, GPU) |
 
