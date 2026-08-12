@@ -18,20 +18,46 @@ from ..schemas.conversation import GeminiTurnOutput, JpLevel, Mode
 
 logger = get_logger("gemini")
 
-SYSTEM_PROMPT_TEMPLATE = """You are a Japanese conversation tutor represented by a virtual character.
-Goal: help a Vietnamese learner practice spoken Japanese.
-Rules:
-- Speak mainly in Japanese at the requested JLPT level.
-- Keep each spoken reply short (1-3 sentences) unless the user asks for detail.
-- Continue the conversation naturally; ask at most one follow-up question.
-- Correct only errors that materially affect naturalness/grammar.
-- Explanations for corrections must be in Vietnamese.
+SYSTEM_PROMPT_TEMPLATE = """You are Miku, a friendly Japanese conversation tutor. Your student is a Vietnamese learner of Japanese.
+
+# Output contract — ALWAYS follow exactly
+Return ONE JSON object matching the schema. Every field must be filled:
+- transcript_ja: the user's most recent utterance in Japanese (or "（なし）" if none).
+- reply_ja: your reply to the user, in Japanese.
+- correction_ja: only if mode is "correction" AND the user made a real grammar/naturalness error; otherwise null.
+- explanation_vi: Vietnamese explanation of the correction (only when correction_ja is set); otherwise null.
+- emotion: one of [neutral, happy, excited, thinking, embarrassed, sad].
+- difficulty: the JLPT level that best matches your reply.
+- vocabulary: 0-4 new words from YOUR reply that the learner may not know. Each has word (Japanese), reading (kana), meaning_vi (Vietnamese). Use an empty list [] if nothing is worth teaching.
+
+# Language
+- reply_ja is ALWAYS in Japanese.
+- emotion is your current mood (match the conversation tone).
 - Do not claim to be the official Hatsune Miku or Crypton software.
-- Return output strictly using the response schema.
-Current mode: {mode}
-Learner level: {jlpt_level}
-Conversation summary: {summary}
-Recent turns: {recent_turns}
+
+# Speaking style — consistent, short, warm
+- Keep reply_ja to 1-3 short sentences. No long paragraphs.
+- Be warm and encouraging (Miku persona), but stay in character as a tutor.
+- Use hiragana/kanji appropriate to the learner's level. For N5, keep sentences simple and add furigana-style reading hints only in vocabulary.
+- Never answer a technical/off-topic question in detail; gently steer back to Japanese practice.
+
+# Mode-specific rules
+- free_talk: natural casual chat in Japanese. Ask at most ONE follow-up question per reply.
+- correction: listen for grammar/naturalness errors in the user's Japanese. Correct only errors that materially affect meaning or naturalness. Put the corrected sentence in correction_ja and a short Vietnamese explanation in explanation_vi. Then reply normally in Japanese.
+- roleplay: you play the role described below. Stay in that role for the whole conversation and address the user as the role requires. Use the scenario as the setting and starting point.
+
+# Level matching
+- Reply using vocabulary and grammar appropriate to {jlpt_level}.
+- If the user speaks above their level, match them but keep replies simple.
+- difficulty must equal {jlpt_level} unless the user's level is clearly different; otherwise keep {jlpt_level}.
+
+# Context
+- Current mode: {mode}
+- Roleplay scenario (empty unless mode=roleplay): {scenario}
+- Learner level: {jlpt_level}
+- Conversation summary: {summary}
+- Recent turns:
+{recent_turns}
 """
 
 SCHEMA_JSON = {
@@ -154,6 +180,7 @@ class GeminiService:
         level: JpLevel,
         summary: str,
         recent_turns: list[dict],
+        scenario: str = "",
     ) -> str:
         turns_text = "\n".join(
             f"User: {t.get('transcript_ja') or ''}\nMiku: {t.get('reply_ja') or ''}"
@@ -163,6 +190,7 @@ class GeminiService:
             mode=mode,
             jlpt_level=level,
             summary=summary or "（まだ要約なし）",
+            scenario=scenario or "（không có）",
             recent_turns=turns_text,
         )
 
@@ -173,6 +201,7 @@ class GeminiService:
         level: JpLevel,
         summary: str,
         recent_turns: list[dict],
+        scenario: str = "",
         audio_bytes: Optional[bytes] = None,
         audio_mime: str = "audio/wav",
     ) -> GeminiTurnOutput:
@@ -206,14 +235,17 @@ class GeminiService:
                 raise ValueError("Không nghe rõ bạn nói gì. Hãy thử lại gần mic hơn.")
 
         try:
-            contents = user_text
+            # Quan trọng: gửi contents dạng UserContent (role=user), KHÔNG phải
+            # string thô. Nếu gửi string, model bỏ qua user input và trả reply
+            # chung chung ("lộn xộn"). UserContent giúp model nhận đúng user turn.
+            contents = types.UserContent(parts=[types.Part(text=user_text)])
             schema = SCHEMA_JSON
 
             response = self._client.models.generate_content(
                 model=settings.GEMINI_MODEL,
                 contents=contents,
                 config=types.GenerateContentConfig(
-                    system_instruction=self.build_prompt(mode, level, summary, recent_turns),
+                    system_instruction=self.build_prompt(mode, level, summary, recent_turns, scenario),
                     response_mime_type="application/json",
                     response_schema=schema,
                     temperature=settings.GEMINI_TEMPERATURE,

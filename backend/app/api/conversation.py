@@ -93,6 +93,7 @@ async def conversation_turn(
             jlpt_level,
             summary,
             recent,
+            scenario or "",
             audio_bytes=audio_data,
             audio_mime=audio_mime,
         )
