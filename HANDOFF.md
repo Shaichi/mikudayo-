@@ -107,6 +107,23 @@ Full pipeline thử thật (mock): `POST turn text → reply_ja + emotion + audi
   `こんにちは私はミクです日本語を練習しましょう` → Gemini reply → voice_mode=rvc.
 - Log UTF-8 fix trong `core/logging.py` (Windows console cp1252 gây UnicodeEncodeError).
 
+### 1.5.2.6 Prompt nhất quán — VERIFIED ✅
+
+- **Gốc rễ "lộn xộn"**: `contents` gửi dạng **string thô** → Gemini **bỏ qua
+  user input**, trả reply chung chung (`transcript_ja:"（なし）"`). Fix: gửi
+  `contents = types.UserContent(parts=[types.Part(text=user_text)])`.
+- Viết lại `SYSTEM_PROMPT_TEMPLATE`: **Output contract** (mô tả từng field của
+  schema), **Language**, **Speaking style** (1–3 câu ngắn, ấm áp, Miku persona),
+  **Mode-specific rules** (free_talk/correction/roleplay), **Level matching**
+  (difficulty = jlpt_level), **Context** (mode/scenario/level/summary/recent).
+- Thêm param `scenario` vào `build_prompt`/`generate_turn` + plumb qua
+  `conversation.py` (form field `scenario`).
+- Verified 3 mode qua HTTP (requests lib): free_talk trả lời tự nhiên + 1 câu
+  hỏi; correction bắt đúng lỗi `ますた→ました` + giải thích tiếng Việt; roleplay
+  đóng vai đúng (店員 nói `いらっしゃいませ！`).
+- **Lưu ý push GitHub**: mạng chặn HTTP/2 → lỗi "Failed to connect github.com
+  port 443" dù curl OK. Fix: `git config http.version HTTP/1.1` (đã set local).
+
 ### 1.5.2 Flutter Phase 2–5 — XONG ✅
 
 - **Push-to-talk** (`conversation_screen.dart` `_InputBar`): giữ mic → `recording` (đếm
