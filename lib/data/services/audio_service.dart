@@ -89,6 +89,12 @@ class AudioService {
     await _player?.stop();
   }
 
+  /// Bật/tắt tiếng phát của Miku mà không làm gián đoạn playback hiện tại.
+  Future<void> setMuted(bool muted) async {
+    final player = _player ??= AudioPlayer();
+    await player.setVolume(muted ? 0 : 1);
+  }
+
   Future<void> dispose() async {
     await _recorder.dispose();
     await _player?.dispose();

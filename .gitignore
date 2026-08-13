@@ -63,3 +63,32 @@ assets/vrm/
 # - models/: model giọng Miku (.pth/.index) tải từ HuggingFace — nặng, không commit
 backend/.venv-rvc/
 backend/models/
+
+# Local research/build tooling (downloaded upstream sources, node modules, etc.)
+/tool/
+
+# Unity generated state and Android exports. Keep Assets/Packages/ProjectSettings.
+/unity/**/[Ll]ibrary/
+/unity/**/[Tt]emp/
+/unity/**/[Oo]bj/
+/unity/**/[Ll]ogs/
+/unity/**/[Uu]ser[Ss]ettings/
+/unity/**/[Bb]uilds/
+/unity/**/MemoryCaptures/
+/android/unityLibrary/
+/android/unityExport/
+/android/build/
+
+# Private avatar model (license permits integration, not redistribution).
+/unity/**/Assets/Mikudayo/Models/*.vrm
+/assets/web/vrm/vrm-model/
+
+# Local Unity/native build and smoke-test evidence.
+/unity/**/.utmp/
+/unity/**/*Captures*/
+/android-window.xml
+/flutter-unity-*.png
+/unity-android-*.png
+/unity-android-*.txt
+/runlog.txt
+/screen*.png

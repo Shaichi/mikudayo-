@@ -26,11 +26,7 @@ enum ConversationPhase {
 
 /// Một lượt trong chuỗi hội thoại trên màn hình.
 class Message {
-  const Message({
-    required this.kind,
-    required this.text,
-    this.result,
-  });
+  const Message({required this.kind, required this.text, this.result});
 
   final MessageKind kind;
   final String text;
@@ -42,10 +38,10 @@ class Message {
   bool get isMiku => kind == MessageKind.miku;
 
   String get displayText => switch (kind) {
-        MessageKind.user => text,
-        MessageKind.miku => text,
-        MessageKind.system => text,
-      };
+    MessageKind.user => text,
+    MessageKind.miku => text,
+    MessageKind.system => text,
+  };
 }
 
 enum MessageKind { user, miku, system }
@@ -58,6 +54,7 @@ class ConversationState {
     this.errorMessage,
     this.errorCode,
     this.recordingSeconds = 0,
+    this.activeReply = '',
   });
 
   final ConversationPhase phase;
@@ -66,6 +63,7 @@ class ConversationState {
   final String? errorMessage;
   final String? errorCode;
   final int recordingSeconds;
+  final String activeReply;
 
   bool get isThinking => phase == ConversationPhase.thinking;
   bool get isRecording => phase == ConversationPhase.recording;
@@ -76,14 +74,14 @@ class ConversationState {
       phase == ConversationPhase.playing;
 
   String get statusLabel => switch (phase) {
-        ConversationPhase.idle => 'Miku sẵn sàng!',
-        ConversationPhase.recording => 'Đang ghi âm… $recordingSeconds giây',
-        ConversationPhase.uploading => 'Đang tải audio…',
-        ConversationPhase.thinking => 'Miku đang suy nghĩ…',
-        ConversationPhase.synthesizing => 'Miku đang nói…',
-        ConversationPhase.playing => 'Đang phát…',
-        ConversationPhase.error => errorMessage ?? 'Có lỗi',
-      };
+    ConversationPhase.idle => 'Miku sẵn sàng!',
+    ConversationPhase.recording => 'Đang ghi âm… $recordingSeconds giây',
+    ConversationPhase.uploading => 'Đang tải audio…',
+    ConversationPhase.thinking => 'Miku đang suy nghĩ…',
+    ConversationPhase.synthesizing => 'Miku đang nói…',
+    ConversationPhase.playing => 'Đang phát…',
+    ConversationPhase.error => errorMessage ?? 'Có lỗi',
+  };
 
   ConversationState copyWith({
     ConversationPhase? phase,
@@ -92,22 +90,23 @@ class ConversationState {
     String? errorMessage,
     String? errorCode,
     int? recordingSeconds,
-  }) =>
-      ConversationState(
-        phase: phase ?? this.phase,
-        messages: messages ?? this.messages,
-        sessionId: sessionId ?? this.sessionId,
-        errorMessage: errorMessage ?? this.errorMessage,
-        errorCode: errorCode ?? this.errorCode,
-        recordingSeconds: recordingSeconds ?? this.recordingSeconds,
-      );
+    String? activeReply,
+  }) => ConversationState(
+    phase: phase ?? this.phase,
+    messages: messages ?? this.messages,
+    sessionId: sessionId ?? this.sessionId,
+    errorMessage: errorMessage ?? this.errorMessage,
+    errorCode: errorCode ?? this.errorCode,
+    recordingSeconds: recordingSeconds ?? this.recordingSeconds,
+    activeReply: activeReply ?? this.activeReply,
+  );
 
   /// Bỏ lỗi, quay về idle mà vẫn giữ tin nhắn.
   ConversationState clearError() => ConversationState(
-        phase: ConversationPhase.idle,
-        messages: messages,
-        sessionId: sessionId,
-      );
+    phase: ConversationPhase.idle,
+    messages: messages,
+    sessionId: sessionId,
+  );
 }
 
 /// ViewModel (Riverpod Notifier) quản lý màn hình hội thoại.
@@ -121,7 +120,10 @@ class ConversationViewModel extends Notifier<ConversationState> {
 
   void addSystemMessage(String text) {
     state = state.copyWith(
-      messages: [...state.messages, Message(kind: MessageKind.system, text: text)],
+      messages: [
+        ...state.messages,
+        Message(kind: MessageKind.system, text: text),
+      ],
     );
   }
 
@@ -135,7 +137,10 @@ class ConversationViewModel extends Notifier<ConversationState> {
       phase: ConversationPhase.thinking,
       errorMessage: null,
       errorCode: null,
-      messages: [...state.messages, Message(kind: MessageKind.user, text: trimmed)],
+      messages: [
+        ...state.messages,
+        Message(kind: MessageKind.user, text: trimmed),
+      ],
     );
 
     try {
@@ -162,7 +167,10 @@ class ConversationViewModel extends Notifier<ConversationState> {
     if (state.isBusy) return false;
     final ok = await _audio.ensurePermission();
     if (!ok) {
-      _fail('Không có quyền micro. Hãy cấp quyền trong hệ điều hành.', 'mic_denied');
+      _fail(
+        'Không có quyền micro. Hãy cấp quyền trong hệ điều hành.',
+        'mic_denied',
+      );
       return false;
     }
     try {
@@ -195,7 +203,10 @@ class ConversationViewModel extends Notifier<ConversationState> {
       return;
     }
     if (audioBytes.isEmpty) {
-      state = state.copyWith(phase: ConversationPhase.idle, recordingSeconds: 0);
+      state = state.copyWith(
+        phase: ConversationPhase.idle,
+        recordingSeconds: 0,
+      );
       return;
     }
 
@@ -230,7 +241,10 @@ class ConversationViewModel extends Notifier<ConversationState> {
     _stopTick();
     await _audio.cancelRecording();
     if (state.phase == ConversationPhase.recording) {
-      state = state.copyWith(phase: ConversationPhase.idle, recordingSeconds: 0);
+      state = state.copyWith(
+        phase: ConversationPhase.idle,
+        recordingSeconds: 0,
+      );
     }
   }
 
@@ -241,6 +255,7 @@ class ConversationViewModel extends Notifier<ConversationState> {
     state = state.copyWith(
       phase: ConversationPhase.synthesizing,
       sessionId: result.sessionId,
+      activeReply: result.replyJa,
     );
 
     // Cập nhật avatar emotion trước khi phát.
@@ -250,15 +265,13 @@ class ConversationViewModel extends Notifier<ConversationState> {
     // Nếu có audio_url → tải và phát (Phase 3+), lip-sync theo mouth cues.
     if (result.audioUrl.isNotEmpty) {
       try {
-        final bytes =
-            await _audio.fetchAudio(_settings.serverUrl + result.audioUrl);
+        final bytes = await _audio.fetchAudio(
+          _settings.serverUrl + result.audioUrl,
+        );
         state = state.copyWith(phase: ConversationPhase.playing);
         final playback = _audio.playBytes(bytes);
         // Phát lip-sync song song với audio.
-        await Future.wait([
-          playback,
-          avatar.playMouthCues(result.mouthCues),
-        ]);
+        await Future.wait([playback, avatar.playMouthCues(result.mouthCues)]);
       } catch (_) {
         // Không phát được audio không phải lỗi chí mạng — vẫn hiển thị reply.
       }
@@ -268,7 +281,11 @@ class ConversationViewModel extends Notifier<ConversationState> {
     state = ConversationState(
       phase: ConversationPhase.idle,
       sessionId: result.sessionId,
-      messages: [...state.messages, Message(kind: MessageKind.miku, text: result.replyJa, result: result)],
+      messages: [
+        ...state.messages,
+        Message(kind: MessageKind.miku, text: result.replyJa, result: result),
+      ],
+      activeReply: '',
     );
   }
 
@@ -277,7 +294,10 @@ class ConversationViewModel extends Notifier<ConversationState> {
       phase: ConversationPhase.error,
       errorMessage: message,
       errorCode: code,
-      messages: [...state.messages, Message(kind: MessageKind.system, text: message)],
+      messages: [
+        ...state.messages,
+        Message(kind: MessageKind.system, text: message),
+      ],
     );
   }
 
@@ -302,5 +322,5 @@ class ConversationViewModel extends Notifier<ConversationState> {
 
 final conversationViewModelProvider =
     NotifierProvider<ConversationViewModel, ConversationState>(
-  ConversationViewModel.new,
-);
+      ConversationViewModel.new,
+    );
