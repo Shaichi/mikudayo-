@@ -43,6 +43,8 @@ dependencies:
   http_parser: ^4.1.2
   webview_flutter: ^4.14.1
   webview_windows: ^0.4.0
+  flutter_embed_unity: 2.0.0
+  flutter_embed_unity_6000_0_android: 2.0.0
 
 dev_dependencies:
   flutter_test:
@@ -65,6 +67,16 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # VRM 3D avatar — trang renderer + bundle JS + model cho mobile WebView.
+  # Tất cả nằm trong assets/web/vrm/ (index.html, avatar.bundle.js, vrm-model/).
+  # avatar.bundle.js = three.js + GLTFLoader + @pixiv/three-vrm bundle bằng esbuild
+  # (self-contained, không import → không CORS). Serve qua HTTP loopback / assetloader.
+  # Model .vrm nặng (26MB) → dùng Git LFS (xem .gitattributes).
+  # Lưu ý: Flutter asset bundling KHÔNG recurse subdir → khai báo cả dir con chứa model.
+  assets:
+    - assets/web/vrm/
+    - assets/web/vrm/vrm-model/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

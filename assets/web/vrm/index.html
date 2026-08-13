@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Miku VRM Renderer</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden; background: transparent;
+  }
+  #app { width: 100%; height: 100%; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #loading {
+    position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center;
+    color: #22D3EE; font-family: sans-serif; font-size: 14px;
+    text-shadow: 0 0 8px rgba(34,211,238,.6);
+    background: rgba(5,8,18,0.3); z-index: 10;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="loading">Miku loading…</div>
+
+<!-- Renderer đã được esbuild bundle thành 1 file IIFE self-contained
+     (three@0.160 + GLTFLoader + @pixiv/three-vrm + logic). Không còn ESM,
+     importmap, hay vendor import chéo → không bị CORS trên Android WebView. -->
+<script src="./avatar.bundle.js"></script>
+</body>
+</html>
