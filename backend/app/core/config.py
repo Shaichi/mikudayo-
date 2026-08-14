@@ -26,9 +26,8 @@ class Settings:
 
     # --- Gemini ---
     GEMINI_API_KEY: str = _env("GEMINI_API_KEY", "")
-    # Audio được transcribe bằng faster-whisper local trước khi gọi Gemini →
-    # Gemini chỉ nhận text → gemini-3.5-flash-lite (nhanh, nhẹ, quota rộng).
-    # Lưu ý: 3.5-flash-lite KHÔNG nhận audio trực tiếp (500); 3-flash-preview hết quota 429.
+    # Android nhận dạng giọng nói bằng Google SpeechRecognizer rồi chỉ gửi text.
+    # Backend vì vậy dùng model text nhanh, nhẹ và quota rộng.
     GEMINI_MODEL: str = _env("GEMINI_MODEL", "gemini-3.5-flash-lite")
     GEMINI_MAX_TURNS: int = int(_env("GEMINI_MAX_TURNS", "8"))
     GEMINI_TEMPERATURE: float = float(_env("GEMINI_TEMPERATURE", "0.7"))
@@ -37,22 +36,21 @@ class Settings:
     # Chỉ tốn thời gian tính toán, KHÔNG tốn phí/thêm quota.
     GEMINI_THINKING: str = _env("GEMINI_THINKING", "minimal")
 
-    # --- VOICEVOX ---
-    VOICEVOX_BASE_URL: str = _env("VOICEVOX_BASE_URL", "http://127.0.0.1:50021")
-    VOICEVOX_SPEAKER_ID: int = int(_env("VOICEVOX_SPEAKER_ID", "0"))
-
-    # --- STT (faster-whisper, Phase 2+) ---
-    WHISPER_MODEL: str = _env("WHISPER_MODEL", "small")
-    WHISPER_LANGUAGE: str = _env("WHISPER_LANGUAGE", "ja")
-
-    # --- STT (faster-whisper, Phase 2+) ---
-    WHISPER_MODEL: str = _env("WHISPER_MODEL", "small")
-    WHISPER_LANGUAGE: str = _env("WHISPER_LANGUAGE", "ja")
-
-    # --- RVC ---
-    RVC_WORKER_URL: str = _env("RVC_WORKER_URL", "http://127.0.0.1:8010")
-    RVC_MODEL_NAME: str = _env("RVC_MODEL_NAME", "")
-    RVC_TIMEOUT: float = float(_env("RVC_TIMEOUT", "15"))
+    # --- Fish Audio online TTS ---
+    FISH_API_BASE_URL: str = _env("FISH_API_BASE_URL", "https://api.fish.audio")
+    FISH_API_KEY: str = _env("FISH_API_KEY", "")
+    FISH_MODEL: str = _env("FISH_MODEL", "s2.1-pro-free")
+    FISH_REFERENCE_ID: str = _env(
+        "FISH_REFERENCE_ID", "3317b3ca88d74206b5478a22a2d502b9"
+    )
+    # WAV mặc định để giữ lip-sync RMS hiện tại. Có thể đổi thành mp3/opus nếu
+    # chấp nhận không có mouth cues phía backend.
+    FISH_AUDIO_FORMAT: str = _env("FISH_AUDIO_FORMAT", "wav")
+    FISH_LATENCY: str = _env("FISH_LATENCY", "low")
+    FISH_TIMEOUT: float = float(_env("FISH_TIMEOUT", "60"))
+    FISH_TEMPERATURE: float = float(_env("FISH_TEMPERATURE", "0.7"))
+    FISH_TOP_P: float = float(_env("FISH_TOP_P", "0.7"))
+    FISH_EMOTION_TAGS: bool = _env("FISH_EMOTION_TAGS", "true").lower() == "true"
 
     # --- Data ---
     DATA_DIR: Path = BASE_DIR / _env("DATA_DIR", "data")
@@ -68,7 +66,6 @@ class Settings:
     # Khi không có GEMINI_API_KEY hoặc engine không chạy, backend chạy chế độ
     # mock để app Flutter vẫn hoạt động end-to-end được (phục vụ dev/UI).
     ALLOW_MOCK: bool = _env("ALLOW_MOCK", "true").lower() == "true"
-    MAX_AUDIO_BYTES: int = int(_env("MAX_AUDIO_BYTES", str(20 * 1024 * 1024)))
 
 
 settings = Settings()

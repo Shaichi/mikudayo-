@@ -24,6 +24,8 @@ namespace Mikudayo.Avatar.Editor
         private const string UrpDirectory = "Assets/Mikudayo/Rendering";
         private const string UrpRendererPath = UrpDirectory + "/MikuUniversalRenderer.asset";
         private const string UrpPipelinePath = UrpDirectory + "/MikuUniversalPipeline.asset";
+        private const string BackgroundTexturePath = "Assets/Mikudayo/Backgrounds/miku_room.png";
+        private const string BackgroundMaterialPath = "Assets/Mikudayo/Backgrounds/MikuRoomBackground.mat";
 
         [MenuItem("Mikudayo/Rebuild Miku Avatar Scene")]
         public static void RebuildScene()
@@ -79,6 +81,7 @@ namespace Mikudayo.Avatar.Editor
             EditorUtility.SetDirty(faceProxy);
             EditorUtility.SetDirty(faceController);
 
+            CreateBackground();
             CreateCamera(avatar);
             CreateLighting();
             CreateStatusOverlay();
@@ -188,6 +191,39 @@ namespace Mikudayo.Avatar.Editor
             framer.Target = avatar;
         }
 
+        private static void CreateBackground()
+        {
+            var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(BackgroundTexturePath);
+            if (texture == null)
+            {
+                throw new FileNotFoundException($"Background image was not imported: {BackgroundTexturePath}");
+            }
+
+            var material = AssetDatabase.LoadAssetAtPath<Material>(BackgroundMaterialPath);
+            if (material == null)
+            {
+                var shader = Shader.Find("Universal Render Pipeline/Unlit");
+                if (shader == null) throw new MissingReferenceException("URP Unlit shader was not found");
+                material = new Material(shader) { name = "MikuRoomBackground" };
+                AssetDatabase.CreateAsset(material, BackgroundMaterialPath);
+            }
+
+            material.SetTexture("_BaseMap", texture);
+            material.SetColor("_BaseColor", Color.white);
+            EditorUtility.SetDirty(material);
+
+            var background = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            background.name = "Miku Room Background";
+            background.transform.position = new Vector3(0f, 1.05f, -1.15f);
+            // The source is 16:9. This oversized quad keeps the image's aspect
+            // ratio and lets a portrait camera crop the sides without stretching.
+            background.transform.localScale = new Vector3(6.4f, 3.6f, 1f);
+            var renderer = background.GetComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+            var collider = background.GetComponent<MeshCollider>();
+            if (collider != null) Object.DestroyImmediate(collider);
+        }
+
         private static void CreateLighting()
         {
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
@@ -244,6 +280,11 @@ namespace Mikudayo.Avatar.Editor
                 AndroidArchitecture.ARMv7 | AndroidArchitecture.ARM64;
             PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
             PlayerSettings.colorSpace = ColorSpace.Linear;
+            PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
+            PlayerSettings.allowedAutorotateToPortrait = false;
+            PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
+            PlayerSettings.allowedAutorotateToLandscapeLeft = false;
+            PlayerSettings.allowedAutorotateToLandscapeRight = false;
         }
 
         [MenuItem("Mikudayo/Configure URP")]

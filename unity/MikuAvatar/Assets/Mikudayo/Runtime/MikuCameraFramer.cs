@@ -6,7 +6,9 @@ namespace Mikudayo.Avatar
     public sealed class MikuCameraFramer : MonoBehaviour
     {
         public GameObject Target;
-        [SerializeField, Range(0.7f, 2f)] private float distanceMultiplier = 1.18f;
+        // Portrait conversation crop: face near the upper third and body down
+        // to the thighs, matching the Flutter controls overlay composition.
+        [SerializeField, Range(0.5f, 2f)] private float distanceMultiplier = 0.68f;
 
         private void Start()
         {
@@ -35,7 +37,7 @@ namespace Mikudayo.Avatar
             // torso height is the stable proxy for conversational frame width.
             var horizontalDistance = Mathf.Max(0.48f, torsoHeight * 1.05f) / horizontalTangent;
             var distance = Mathf.Max(verticalDistance, horizontalDistance);
-            var focus = Vector3.Lerp(hips.position, head.position, 0.62f);
+            var focus = Vector3.Lerp(hips.position, head.position, 0.48f);
             transform.position = focus + Vector3.forward * distance * distanceMultiplier;
             transform.LookAt(focus);
 

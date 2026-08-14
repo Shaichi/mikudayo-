@@ -1,7 +1,7 @@
-"""Dịch vụ gọi Gemini với structured output (Phase 1 — text chat).
+"""Dịch vụ gọi Gemini với structured output từ transcript text.
 
 Theo mục 8 của tài liệu:
-- Gemini phân tích audio/text và tạo text + JSON theo schema.
+- Gemini phân tích transcript text và tạo JSON theo schema.
 - Backend yêu cầu JSON schema thay vì parse text tự do.
 - Khi thiếu GEMINI_API_KEY, chạy chế độ mock để pipeline vẫn hoạt động.
 """
@@ -36,7 +36,7 @@ Return ONE JSON object matching the schema. Every field must be filled:
 - Do not claim to be the official Hatsune Miku or Crypton software.
 
 # Speaking style — consistent, short, warm
-- Keep reply_ja to 1-3 short sentences. No long paragraphs.
+- Keep reply_ja to 1-2 short sentences, preferably under 45 Japanese characters. No long paragraphs.
 - Be warm and encouraging (Miku persona), but stay in character as a tutor.
 - Use hiragana/kanji appropriate to the learner's level. For N5, keep sentences simple and add furigana-style reading hints only in vocabulary.
 - Never answer a technical/off-topic question in detail; gently steer back to Japanese practice.
@@ -88,19 +88,6 @@ SCHEMA_JSON = {
         },
     },
     "required": ["transcript_ja", "reply_ja", "emotion", "difficulty", "vocabulary"],
-}
-
-# Schema NHỎ cho audio input. Model mới (gemini-flash-latest) trả 500 INTERNAL
-# khi audio + schema to (có enum/array/nested). Khi có audio_bytes ta chỉ xin
-# transcript + reply + emotion để model xử lý được; các field còn lại để default.
-AUDIO_SCHEMA_JSON = {
-    "type": "object",
-    "properties": {
-        "transcript_ja": {"type": "string"},
-        "reply_ja": {"type": "string"},
-        "emotion": {"type": "string", "enum": ["neutral", "happy", "excited", "thinking", "embarrassed", "sad"]},
-    },
-    "required": ["transcript_ja", "reply_ja", "emotion"],
 }
 
 # Chế độ mock — dùng khi chưa có key, để UI/API test được.
@@ -202,37 +189,12 @@ class GeminiService:
         summary: str,
         recent_turns: list[dict],
         scenario: str = "",
-        audio_bytes: Optional[bytes] = None,
-        audio_mime: str = "audio/wav",
     ) -> GeminiTurnOutput:
-        """Gọi Gemini với text (hoặc audio ở Phase 2+).
-
-        - `audio_bytes` != None:
-          1. Transcribe bằng faster-whisper (local, không key) → text.
-          2. Gửi text đó vào Gemini (text-only, schema đầy đủ).
-          => Không phụ thuộc model Gemini có hỗ trợ audio hay không.
-          Nếu Whisper không ra text (lỗi) → fallback gửi audio thẳng vào Gemini
-          bằng schema nhỏ (AUDIO_SCHEMA_JSON).
-        - Mock mode: nếu có audio thì transcribe bằng chuỗi mẫu, vẫn trả reply.
-        """
+        """Gọi Gemini bằng transcript text và trả structured output."""
         if self._mock:
-            if audio_bytes is not None:
-                user_text = "（音声入力・モック）こんにちは、元気ですか？"
             return _mock_output(user_text, mode, level)
 
         from google.genai import types
-
-        # --- Phase 2+: audio → text bằng Whisper (bên thứ 3 local) ---
-        # Whisper transcribe trước → gọi Gemini text-only (3.5-flash-lite).
-        # Không gửi audio thẳng Gemini vì model text-only sẽ 500.
-        if audio_bytes is not None:
-            from . import stt_service
-
-            user_text = stt_service.transcribe_audio(audio_bytes)
-            if not user_text.strip():
-                # Whisper không nghe được giọng nói (rỗng/lỗi) → báo lỗi thân thiện.
-                logger.warning("Whisper không transcribe được audio, trả lỗi.")
-                raise ValueError("Không nghe rõ bạn nói gì. Hãy thử lại gần mic hơn.")
 
         try:
             # Quan trọng: gửi contents dạng UserContent (role=user), KHÔNG phải

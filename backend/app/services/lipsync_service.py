@@ -3,7 +3,7 @@
 Theo mục 10.1 tài liệu:
 - Đọc WAV, tính RMS theo cửa sổ 40–60 ms.
 - Trả mảng {t_ms, mouth} (0..1) để Flutter/JS nội suy vào ParamMouthOpenY.
-- Cues tính trên audio sau RVC để miệng bám đúng file đang phát.
+- Cues tính trên WAV Fish Audio trả về để miệng bám đúng file đang phát.
 """
 from __future__ import annotations
 

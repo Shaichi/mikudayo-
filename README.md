@@ -1,237 +1,123 @@
-# 🎤 Miku Japanese Conversation
+# Miku Japanese Conversation
 
-Ứng dụng **luyện nói tiếng Nhật** với trợ lý ảo phong cách Hatsune Miku.
+Ứng dụng Flutter luyện hội thoại tiếng Nhật với avatar Miku 3D.
 
-- **Giao diện:** Flutter (Windows desktop / Web / Android / iOS)
-- **Backend:** FastAPI (local) — orchestrator + Gemini AI + SQLite
-- **Giọng nói (Phase 3–5):** VOICEVOX (TTS) + RVC (voice conversion) + lip-sync avatar
-- **Realtime (Phase 6):** nghiên cứu (research only), WS scaffold `/v2/live`
+## Pipeline hiện tại
 
-> **Trạng thái hiện tại: Phase 1–5 hoàn thành** — toàn pipeline chạy end-to-end:
-> nhập text hoặc nói (mic) → Gemini trả lời → VOICEVOX đọc → RVC đổi giọng
-> → avatar lip-sync theo audio. Cả 3 engine (Gemini/VOICEVOX/RVC) chạy chế độ
-> **mock** khi chưa cài, nên app test được ngay không cần bất kỳ key/engine nào.
-
----
-
-## Kiến trúc
-
-```
-┌─────────────────────────┐   HTTP/multipart  ┌───────────────────────────────────────┐
-│  Flutter (UI + mic)     │  ───────────────▶ │  FastAPI (backend local)              │
-│  · Text chat (P1)       │                   │  · POST /v1/conversation/turn         │
-│  · Push-to-talk (P2)    │  ◀─────────────── │  · Gemini + JSON schema (mock mode)   │
-│  · Play audio (P3)      │   JSON + audio_url│  · SQLite: sessions/turns/vocabulary  │
-│  · History/Vocab/Set    │                   │  · WS /v2/live (P6 research)          │
-└─────────────────────────┘                   └───────────────────────────────────────┘
-   │ mic (P2)   │ just_audio (P3)   │ avatar (P5)          │
-   ▼            ▼                   ▼            VOICEVOX (P3) · RVC worker (P4) · lip-sync (P5)
+```text
+Mic Android
+  → Google SpeechRecognizer trên điện thoại
+  → transcript text
+  → FastAPI + Gemini
+  → reply_ja + emotion
+  → Fish Audio online TTS
+  → WAV/MP3/Opus
+  → Flutter playback + avatar emotion/lip-sync
 ```
 
-- **Flutter** giữ UI, mic (record 16kHz mono), phát audio (just_audio), avatar
-  (emotion + lip-sync theo `MouthCue`).
-- **FastAPI** đóng vai orchestrator: ghép prompt, gọi Gemini, lưu lịch sử,
-  TTS (VOICEVOX), voice conversion (RVC), tính mouth cues.
-- **SQLite** (`backend/data/miku.db`) lưu 5 bảng: `sessions`, `turns`,
-  `vocabulary`, `turn_vocabulary`, `settings`.
+Không còn sử dụng AivisSpeech, RVC, CUDA/GPU hoặc model giọng local. Backend chỉ làm orchestration nhẹ, bảo vệ API key, lưu lịch sử và chuyển audio Fish về app.
 
-## Cách chạy
+## Thành phần
 
-### 1. Backend
+- Flutter: UI, Google SpeechRecognizer, playback `just_audio`, Unity avatar.
+- FastAPI: Gemini, SQLite, Fish Audio proxy, audio status.
+- Fish Audio: sinh toàn bộ giọng nói online qua `reference_id`.
+- Android chỉ gửi transcript text; audio microphone không được upload về backend.
 
-Yêu cầu: **Python 3.11+**.
+## Chạy backend
 
-```bash
-cd backend
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# Linux/macOS:
-source .venv/bin/activate
+1. Sao chép `backend/.env.example` thành `backend/.env`.
+2. Điền `GEMINI_API_KEY` và `FISH_API_KEY`.
+3. Nhấp đúp `START_BACKEND.cmd`.
 
-pip install -r requirements.txt
-cp .env.example .env      # GEMINI_API_KEY để trống → mock mode
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+Cấu hình TTS mặc định:
+
+```env
+FISH_MODEL=s2.1-pro-free
+FISH_REFERENCE_ID=3317b3ca88d74206b5478a22a2d502b9
+FISH_AUDIO_FORMAT=wav
+FISH_LATENCY=low
 ```
+
+WAV được chọn mặc định để giữ mouth cues RMS. Có thể dùng MP3/Opus để giảm băng thông, nhưng lip-sync backend hiện chỉ tính trên WAV.
 
 Kiểm tra:
 
-```bash
-curl http://127.0.0.1:8000/health
-# {"status":"ok","gemini":false,"voicevox":false,"rvc":false,"mode":"mock",...}
-
-curl -X POST http://127.0.0.1:8000/v1/conversation/turn \
-  -F "text=こんにちは" -F "mode=free_talk" -F "jlpt_level=N5"
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
 ```
 
-#### Bật engine thật (tùy chọn)
+Kết quả live:
 
-Pipeline chạy được ngay với mock, nhưng muốn giọng thật thì cài 3 engine:
-
-| Engine | Cách cài | Khi hoạt động `/health` báo |
-|---|---|---|
-| **Gemini** | Key tại [Google AI Studio](https://aistudio.google.com/apikey), điền `GEMINI_API_KEY` vào `backend/.env`, restart backend | `"gemini": true` |
-| **STT (Whisper)** | `pip install faster-whisper` → tải model lần đầu (~500MB, tự động). Đổi cỡ trong `.env` (`WHISPER_MODEL`) | log "Whisper init" |
-| **VOICEVOX** | Cài [VOICEVOX](https://voicevox.hiroshiba.jp/) (mở app → mặc định cổng 50021) | `"voicevox": true` |
-| **RVC** | Chạy worker RVC ở cổng 8010, set `RVC_WORKER_URL` (mặc định `http://127.0.0.1:8010/`) | `"rvc": true` |
-
-> 🔧 **Cách chạy RVC worker** (Phase 4) — cần môi trường riêng:
-> ```bash
-> cd backend
-> python -m venv .venv-rvc        # Python 3.10 (fairseq không chạy trên 3.11)
-> .venv-rvc\Scripts\activate
-> pip install rvc-python fastapi uvicorn python-multipart   # pip <= 24.0 nếu omegaconf lỗi
-> .venv-rvc\Scripts\python.exe rvc_worker.py
-> ```
-> Model giọng Miku đặt trong `backend/models/` (gitignore — không commit).
-> Hiện tại: `miku_mellow_rvc.pth` + `.index` (NoCrypt/miku_RVC). Đã verify
-> end-to-end: text → Gemini → VOICEVOX → RVC 2.5s, output 40kHz.
-
-> ⚠️ **Model Gemini**: mặc định `gemini-3.5-flash-lite` — **text-only** (nhanh +
-> nhẹ + quota rộng). Giọng nói từ mic được **transcribe bằng faster-whisper
-> local** trước, rồi mới gửi text vào Gemini — nên không cần model hỗ trợ audio.
-> Lưu ý: `gemini-2.5-flash` trả **404** cho key mới; `gemini-3.5-flash-lite`
-> KHÔNG nhận audio trực tiếp (500 INTERNAL) nhưng text OK; `gemini-3-flash-preview`
-> hết quota 20/ngày nhanh (429). Đổi được trong `backend/.env` (`GEMINI_MODEL`).
-> Google đang chuyển sang **auth keys** — key Standard sẽ bị từ chối từ 09/2026.
-
-### 2. Flutter
-
-Yêu cầu: **Flutter 3.x** (`flutter doctor` OK).
-
-```bash
-flutter pub get
-flutter run -d windows    # hoặc -d chrome / -d edge
+```json
+{
+  "status": "ok",
+  "gemini": true,
+  "fish_audio": true,
+  "mode": "live",
+  "model": "gemini-3.5-flash-lite",
+  "tts_model": "s2.1-pro-free"
+}
 ```
 
-Mở **Cài đặt** → nhấn **Kiểm tra máy chủ** để xác nhận kết nối backend
-(mặc định `http://127.0.0.1:8000`).
+Chi tiết cài đặt và xử lý lỗi: `BACKEND_GUIDE.md`.
 
-- **Desktop/Web:** dùng `127.0.0.1` là được.
-- **Điện thoại cùng Wi-Fi:** backend chạy với `--host 0.0.0.0`, rồi đặt
-  server URL = `http://<IP máy>:8000`.
-- **Android emulator:** dùng `http://10.0.2.2:8000`.
+## API hội thoại
 
----
-
-## Tính năng hiện có (Phase 1–5)
-
-- 💬 **Text chat với Miku** — nhập tiếng Nhật → Gemini trả lời kèm:
-  - **reply_ja** — câu trả lời chính.
-  - **correction_ja + explanation_vi** — sửa lỗi + giải thích tiếng Việt
-    (chế độ *Sửa lỗi*).
-  - **emotion** — 😊 😄 😆 🤔 😳 😢 (điều khiển biểu cảm avatar).
-  - **vocabulary** — chip từ mới (word/reading/meaning_vi), tự lưu vào sổ.
-- 🎤 **Push-to-talk (Phase 2)** — giữ nút mic để nói → upload WAV 16kHz →
-  **faster-whisper** transcribe → gửi text vào Gemini → trả lời (không cần
-  model Gemini hỗ trợ audio).
-- 🔊 **Giọng nói Miku (Phase 3)** — reply → **VOICEVOX** TTS → phát qua
-  just_audio. Khi VOICEVOX chưa cài: tự sinh WAV mock (tonal) nên pipeline
-  vẫn chạy đủ.
-- 🎵 **RVC voice conversion (Phase 4)** — chuyển giọng VOICEVOX qua worker RVC;
-  nếu RVC lỗi/tắt → fallback về giọng gốc (`rvc_fallback`), không crash.
-- 👄 **Lip-sync + avatar (Phase 5)** — backend tính `MouthCue` (RMS 40–60ms),
-  Flutter phát avatar mở/ngậm miệng đồng bộ audio. Khi có SDK Live2D thật chỉ
-  cần implement `Live2dBridge` (UI không đổi).
-- 🗂 **Lịch sử hội thoại** — danh sách phiên, xem lại từng lượt, xóa phiên.
-- 📖 **Sổ từ vựng** — từ đã học theo số lần gặp.
-- ⚙️ **Cài đặt** — server URL, chế độ học, JLPT level, bối cảnh Role Play;
-  lưu cục bộ (shared_preferences).
-
-### State machine
-
-Pipeline đầy đủ (Phase 2–5):
-`idle → recording → uploading → thinking → synthesizing → playing → idle`
-với lỗi: `mic_denied | network_error | gemini_error | tts_error | rvc_fallback`.
-Mỗi bước đều có status label trên màn hình ("Miku đang suy nghĩ…", "Đang phát…").
-
-### Chế độ engine
-
-| Engine | Nếu cài | Nếu chưa cài |
-|---|---|---|
-| Gemini | live (cần `GEMINI_API_KEY` trong `.env`) | mock (trả câu mẫu, vẫn parse JSON) |
-| STT (Whisper) | transcribe thật giọng nói → text | (audio rỗng → báo "không nghe rõ") |
-| VOICEVOX (port 50021) | TTS thật qua `/audio_query` + `/synthesis` | WAV mock 440Hz+880Hz |
-| RVC (port 8010) | ✅ convert qua `/convert` (model Miku, GPU) | fallback về giọng VOICEVOX gốc |
-| Live2D | chưa có SDK Flutter chính thức | emoji + mouth scale |
-
-`/health` báo trạng thái từng engine (`"gemini": true/false`, ...) để biết đang
-chạy live hay mock.
-
-## Cấu trúc thư mục
-
-```
-backend/
-  app/
-    core/config.py         # Settings từ .env (mock mode khi thiếu key)
-    db/sqlite.py           # Schema 5 bảng
-    schemas/               # Pydantic: ConversationResult, VocabItem...
-    repositories/          # CRUD sessions/turns/vocabulary
-    services/gemini_service.py   # Gemini + JSON schema + mock (text/audio)
-    services/voicevox_service.py # TTS: audio_query → synthesis + mock_wav
-    services/rvc_service.py      # convert qua worker + fallback
-    services/lipsync_service.py  # MouthCue: RMS 40–60ms trên wav
-    api/                   # /v1/conversation/turn, /v1/audio/{id}, /health,
-                           # history, vocab, /v2/live (realtime research)
-lib/
-  app/         # app.dart, theme.dart (cyan Miku), router.dart
-  core/        # config (server URL), errors (ApiException), network
-  data/
-    models/    # conversation_turn, session_record, vocabulary_record
-    services/  # api_service.dart (sendText/sendAudio), audio_service.dart (record/play)
-    repositories/  # conversation_repository, settings_repository
-  features/
-    home/            # màn hình chính
-    conversation/    # text chat + push-to-talk + view model + widgets
-    history/         # lịch sử phiên
-    vocabulary/      # sổ từ vựng
-    settings/        # cài đặt + kiểm tra máy chủ
-  avatar/        # avatar_controller.dart + live2d_bridge.dart (lip-sync P5)
-  main.dart
-test/            # widget test + live integration test (cần backend chạy)
+```text
+POST /v1/conversation/turn
+GET  /v1/audio/{turn_id}/status
+GET  /v1/audio/{turn_id}
 ```
 
-## Checklist các Phase
+`POST /v1/conversation/turn` trả text/emotion trước với `voice_mode=pending`. Fish Audio chạy ở background; Flutter poll status và phát audio khi `voice_mode=fish_audio`.
 
-| Phase | Nội dung | Trạng thái |
-|---|---|---|
-| **0** | Setup: cài đặt, health check, Gemini key | ✅ Xong |
-| **1** | Text chat: text → Gemini JSON → bubble | ✅ Xong |
-| **2** | Voice input: record → upload → transcribe | ✅ Xong |
-| **3** | VOICEVOX: reply → wav → just_audio | ✅ Xong (mock fallback) |
-| **4** | RVC: worker warm, convert, fallback | ✅ Xong (verified live: 40kHz, 2.5s) |
-| **5** | Avatar: emotion + lip-sync mouth cues | ✅ Xong (Live2D bridge chờ SDK) |
-| **6** | Realtime: Gemini Live + WebSocket | 🔬 Research only — WS scaffold `/v2/live` |
+## Tính năng
 
-**Phase 6** theo tài liệu (mục 14.1): Gemini Live hiện là Preview, dùng stateful
-WebSocket (PCM 16kHz in / 24kHz out). Giữ **push-to-talk là sản phẩm chính**;
-chỉ merge realtime nếu latency < ~1s. Khung `backend/app/api/realtime.py` đã có:
-nhận text event + PCM chunk, ack round-trip — đủ để test đường truyền WSS từ Flutter.
+- Chat tiếng Nhật với Gemini, có sửa lỗi và giải thích tiếng Việt.
+- Google Speech-to-Text trên Android, không upload audio.
+- TTS tiếng Nhật online bằng public Fish voice qua `reference_id`.
+- Emotion từ Gemini tác động lên tag/prosody Fish và biểu cảm avatar.
+- Text-first response để UI không phải chờ TTS.
+- WAV mouth cues cho lip-sync.
+- Lịch sử hội thoại, từ vựng và cài đặt server.
+- Portrait-only; bàn phím chỉ đẩy composer, không resize avatar.
 
-## Bảo mật
+## Cấu trúc chính
 
-- **Gemini API key chỉ đặt trong `backend/.env`** — KHÔNG nhúng vào Flutter.
-  Git đã ignore `.env`.
-- Chỉ bind `0.0.0.0` khi cần test từ điện thoại; không mở cổng ra internet.
-- Giới hạn kích thước audio upload (20 MB).
-- Retry Gemini với backoff khi gặp 429/5xx.
-- Audio tạm trong `backend/data/audio/` (TTL; không log raw audio).
-- Mic chỉ ghi khi người dùng giữ nút push-to-talk; xóa file tạm sau khi upload.
+```text
+backend/app/api/conversation.py           hội thoại + audio background/status
+backend/app/services/fish_audio_service.py Fish Audio REST client
+backend/app/services/gemini_service.py     Gemini + context hội thoại
+backend/app/services/lipsync_service.py    mouth cues từ WAV
+backend/app/core/config.py                 cấu hình .env
+lib/data/services/speech_recognition_service.dart  Google STT Android
+lib/data/services/api_service.dart         FastAPI client
+lib/data/services/audio_service.dart       playback
+lib/features/conversation/                 UI và state hội thoại
+unity/MikuAvatar/                          avatar 3D
+```
 
-## License
+## Test
 
-Dự án cá nhân/phi thương mại. Khi thêm asset hãy kiểm tra từng nguồn:
+```powershell
+cd backend
+python -m unittest discover -s tests -v
 
-- **Hatsune Miku** & hình ảnh liên quan — **Piapro CC BY-NC** (ghi attribution,
-  phi thương mại).
-- **VOICEVOX** — tuân theo [software terms](https://voicevox.hiroshiba.jp/) và
-  điều khoản từng speaker.
-- **RVC** — theo license của repo framework.
-- **Live2D SDK/model** — theo license riêng của từng bên.
-- Không tải "Miku RVC model" từ nguồn mập mờ.
+cd ..
+flutter analyze
+flutter test
+```
 
-## Tài liệu tham khảo
+Các unit test Fish dùng HTTP giả lập, không tiêu quota.
 
-- `Tai_lieu_du_an_Miku_Japanese_Conversation_Flutter (1).docx` — tài liệu gốc
-  (kiến trúc, API contract, prompt system, checklist 20 bước).
-- `HANDOFF.md` — bàn giao giữa các phiên phát triển.
+## Bảo mật và quyền
+
+- Không commit `backend/.env` hoặc nhúng API key vào APK.
+- Public/community voice có thể bị thay đổi hoặc gỡ. Trước khi phân phối/thương mại hóa, kiểm tra điều khoản của voice và thương hiệu liên quan.
+- Dự án gọi output là “Miku-like”; không mặc định đây là giọng Hatsune Miku chính thức.
+
+## Tài liệu
+
+- `BACKEND_GUIDE.md`: cài và chạy backend Fish Audio.
+- `HANDOFF.md`: trạng thái dự án cho agent tiếp theo.

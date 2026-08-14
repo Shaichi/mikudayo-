@@ -10,4 +10,7 @@ class ServerConfig {
 
   /// Timeout cho mỗi request.
   static const Duration requestTimeout = Duration(seconds: 30);
+
+  /// Fish Audio chạy online ở background sau khi text Gemini đã sẵn sàng.
+  static const Duration audioGenerationTimeout = Duration(seconds: 45);
 }

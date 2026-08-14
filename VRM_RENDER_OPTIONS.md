@@ -12,7 +12,7 @@
 
 - **App:** "Miku Japanese Conversation" — app hội thoại tiếng Nhật với nhân vật Miku.
 - **Stack:** Flutter (frontend, đã có Android + Windows target) + FastAPI (backend).
-  Voice: VOICEVOX + RVC. AI trả lời: Gemini.
+  Voice: AivisSpeech + RVC. AI trả lời: Gemini.
 - **Mục tiêu hiện tại:** có **mô hình Miku 3D** render trong app (avatar), với:
   - **Đầy đủ cảm xúc** (happy / sad / excited / thinking / embarrassed / neutral)
   - **Miệng mấp máy đúng lúc nói** (lip-sync theo audio + mouth cues từ backend)

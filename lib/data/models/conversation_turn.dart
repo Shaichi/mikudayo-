@@ -19,42 +19,38 @@ enum MikuEmotion {
 
   /// Emoji hiển thị cho từng cảm xúc.
   String get emoji => switch (this) {
-        MikuEmotion.neutral => '😊',
-        MikuEmotion.happy => '😄',
-        MikuEmotion.excited => '😆',
-        MikuEmotion.thinking => '🤔',
-        MikuEmotion.embarrassed => '😳',
-        MikuEmotion.sad => '😢',
-      };
+    MikuEmotion.neutral => '😊',
+    MikuEmotion.happy => '😄',
+    MikuEmotion.excited => '😆',
+    MikuEmotion.thinking => '🤔',
+    MikuEmotion.embarrassed => '😳',
+    MikuEmotion.sad => '😢',
+  };
 
   /// Nhãn tiếng Việt cho từng cảm xúc.
   String get label => switch (this) {
-        MikuEmotion.neutral => 'Vui vẻ',
-        MikuEmotion.happy => 'Hạnh phúc',
-        MikuEmotion.excited => 'Phấn khích',
-        MikuEmotion.thinking => 'Suy nghĩ',
-        MikuEmotion.embarrassed => 'Xấu hổ',
-        MikuEmotion.sad => 'Buồn',
-      };
+    MikuEmotion.neutral => 'Vui vẻ',
+    MikuEmotion.happy => 'Hạnh phúc',
+    MikuEmotion.excited => 'Phấn khích',
+    MikuEmotion.thinking => 'Suy nghĩ',
+    MikuEmotion.embarrassed => 'Xấu hổ',
+    MikuEmotion.sad => 'Buồn',
+  };
 }
 
 /// Một từ vựng mới trong lượt hội thoại.
 class VocabItem {
-  const VocabItem({
-    required this.word,
-    this.reading = '',
-    this.meaningVi = '',
-  });
+  const VocabItem({required this.word, this.reading = '', this.meaningVi = ''});
 
   final String word;
   final String reading;
   final String meaningVi;
 
   factory VocabItem.fromJson(Map<String, dynamic> json) => VocabItem(
-        word: (json['word'] as String?) ?? '',
-        reading: (json['reading'] as String?) ?? '',
-        meaningVi: (json['meaning_vi'] as String?) ?? '',
-      );
+    word: (json['word'] as String?) ?? '',
+    reading: (json['reading'] as String?) ?? '',
+    meaningVi: (json['meaning_vi'] as String?) ?? '',
+  );
 }
 
 /// Cue chuyển động miệng (Phase 5 — giữ model sẵn).
@@ -65,9 +61,9 @@ class MouthCue {
   final double mouth;
 
   factory MouthCue.fromJson(Map<String, dynamic> json) => MouthCue(
-        tMs: (json['t_ms'] as num?)?.toInt() ?? 0,
-        mouth: (json['mouth'] as num?)?.toDouble() ?? 0,
-      );
+    tMs: (json['t_ms'] as num?)?.toInt() ?? 0,
+    mouth: (json['mouth'] as num?)?.toDouble() ?? 0,
+  );
 }
 
 /// Kết quả một lượt hội thoại từ backend.
@@ -120,6 +116,42 @@ class ConversationResult {
           .map(MouthCue.fromJson)
           .toList(),
       timingMs: (json['timing_ms'] as Map<String, dynamic>?) ?? const {},
+    );
+  }
+}
+
+/// Trạng thái tạo giọng nền sau khi backend đã trả text của Miku.
+class ConversationAudioStatus {
+  const ConversationAudioStatus({
+    required this.status,
+    this.audioUrl = '',
+    this.voiceMode = 'pending',
+    this.mouthCues = const [],
+    this.timingMs = const {},
+    this.error,
+  });
+
+  final String status;
+  final String audioUrl;
+  final String voiceMode;
+  final List<MouthCue> mouthCues;
+  final Map<String, dynamic> timingMs;
+  final String? error;
+
+  bool get isReady => status == 'ready' && audioUrl.isNotEmpty;
+  bool get isError => status == 'error';
+
+  factory ConversationAudioStatus.fromJson(Map<String, dynamic> json) {
+    return ConversationAudioStatus(
+      status: (json['status'] as String?) ?? 'pending',
+      audioUrl: (json['audio_url'] as String?) ?? '',
+      voiceMode: (json['voice_mode'] as String?) ?? 'pending',
+      mouthCues: ((json['mouth_cues'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(MouthCue.fromJson)
+          .toList(),
+      timingMs: (json['timing_ms'] as Map<String, dynamic>?) ?? const {},
+      error: json['error'] as String?,
     );
   }
 }

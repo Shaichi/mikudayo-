@@ -30,24 +30,11 @@ class ConversationRepository {
     );
   }
 
-  /// Gửi audio với cài đặt hiện tại.
-  Future<ConversationResult> sendAudio({
+  Future<ConversationAudioStatus> waitForAudio({
     required String serverUrl,
-    required List<int> audioBytes,
-    required String mode,
-    required String jlptLevel,
-    required String scenario,
-    String sessionId = '',
+    required String turnId,
   }) {
-    return _api.sendAudio(
-      baseUrl: serverUrl,
-      audioBytes: audioBytes,
-      filename: 'input.wav',
-      mode: mode,
-      jlptLevel: jlptLevel,
-      scenario: scenario,
-      sessionId: sessionId,
-    );
+    return _api.waitForAudio(baseUrl: serverUrl, turnId: turnId);
   }
 
   Future<List<SessionRecord>> getSessions(String serverUrl) =>

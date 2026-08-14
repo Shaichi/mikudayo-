@@ -12,7 +12,8 @@ from pydantic import BaseModel, Field
 Mode = Literal["free_talk", "correction", "roleplay"]
 JpLevel = Literal["N5", "N4", "N3"]
 Emotion = Literal["neutral", "happy", "excited", "thinking", "embarrassed", "sad"]
-VoiceMode = Literal["rvc", "voicevox", "mock"]
+VoiceMode = Literal["pending", "fish_audio", "mock", "none"]
+AudioStatusValue = Literal["pending", "ready", "error"]
 
 
 class VocabItem(BaseModel):
@@ -59,18 +60,29 @@ class ConversationResult(BaseModel):
     emotion: Emotion = "neutral"
     vocabulary: list[VocabItem] = Field(default_factory=list)
     audio_url: str = Field(description="URL để Flutter phát audio (có thể rỗng ở mock)")
-    voice_mode: VoiceMode = "voicevox"
+    voice_mode: VoiceMode = "fish_audio"
     mouth_cues: list[MouthCue] = Field(default_factory=list)
     timing_ms: dict[str, Any] = Field(default_factory=dict)
+
+
+class AudioGenerationStatus(BaseModel):
+    """Trạng thái job tạo giọng chạy nền cho một lượt hội thoại."""
+
+    status: AudioStatusValue = "pending"
+    audio_url: str = ""
+    voice_mode: VoiceMode = "pending"
+    mouth_cues: list[MouthCue] = Field(default_factory=list)
+    timing_ms: dict[str, Any] = Field(default_factory=dict)
+    error: Optional[str] = None
 
 
 class HealthStatus(BaseModel):
     status: str
     gemini: bool
-    voicevox: bool
-    rvc: bool
+    fish_audio: bool
     mode: str
     model: str
+    tts_model: str
 
 
 class TurnRecord(BaseModel):

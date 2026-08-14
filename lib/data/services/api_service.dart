@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
 
 import '../../core/config/server_config.dart';
 import '../../core/errors/api_exception.dart';
@@ -27,9 +26,9 @@ class ApiService {
   Uri _uri(String baseUrl, String path) => Uri.parse('$baseUrl$path');
 
   Map<String, String> _headers() => {
-        'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
-        'Accept': 'application/json',
-      };
+    'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
+    'Accept': 'application/json',
+  };
 
   Future<Map<String, dynamic>> _decode(http.Response res) async {
     if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -94,44 +93,36 @@ class ApiService {
     return ConversationResult.fromJson(await _decode(res));
   }
 
-  /// Gửi audio (Phase 2): multipart upload -> backend transcribe + reply.
-  Future<ConversationResult> sendAudio({
+  /// Đợi Fish Audio hoàn tất mà không chặn response text ban đầu.
+  Future<ConversationAudioStatus> waitForAudio({
     required String baseUrl,
-    required List<int> audioBytes,
-    String filename = 'input.wav',
-    String mimeType = 'audio/wav',
-    String mode = 'free_talk',
-    String jlptLevel = 'N5',
-    String scenario = '',
-    String sessionId = '',
+    required String turnId,
   }) async {
-    final req = http.MultipartRequest(
-      'POST',
-      _uri(baseUrl, '/v1/conversation/turn'),
-    );
-    req.fields['mode'] = mode;
-    req.fields['jlpt_level'] = jlptLevel;
-    if (scenario.isNotEmpty) req.fields['scenario'] = scenario;
-    if (sessionId.isNotEmpty) req.fields['session_id'] = sessionId;
-    req.files.add(http.MultipartFile.fromBytes(
-      'audio',
-      audioBytes,
-      filename: filename,
-      contentType: MediaType.parse(mimeType),
-    ));
+    final deadline = DateTime.now().add(ServerConfig.audioGenerationTimeout);
+    while (DateTime.now().isBefore(deadline)) {
+      late http.Response res;
+      try {
+        res = await _client
+            .get(_uri(baseUrl, '/v1/audio/$turnId/status'))
+            .timeout(const Duration(seconds: 5));
+      } on TimeoutException {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        continue;
+      } catch (_) {
+        throw ApiException.network();
+      }
 
-    late http.Response res;
-    try {
-      final streamed = await _client
-          .send(req)
-          .timeout(const Duration(seconds: 60));
-      res = await http.Response.fromStream(streamed);
-    } on TimeoutException {
-      throw ApiException.timeout();
-    } catch (_) {
-      throw ApiException.network();
+      final status = ConversationAudioStatus.fromJson(await _decode(res));
+      if (status.isReady) return status;
+      if (status.isError) {
+        throw ApiException.server(
+          status: 500,
+          detail: status.error ?? 'Không tạo được giọng nói.',
+        );
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 250));
     }
-    return ConversationResult.fromJson(await _decode(res));
+    throw ApiException.timeout();
   }
 
   /// Lấy danh sách phiên hội thoại.
@@ -170,7 +161,9 @@ class ApiService {
   }
 
   /// Lấy sổ từ vựng.
-  Future<List<VocabularyRecord>> getVocabulary({required String baseUrl}) async {
+  Future<List<VocabularyRecord>> getVocabulary({
+    required String baseUrl,
+  }) async {
     late http.Response res;
     try {
       res = await _client
@@ -185,7 +178,7 @@ class ApiService {
     return list.map(VocabularyRecord.fromJson).toList();
   }
 
-  /// Gọi GET /health, trả về chuỗi tóm tắt trạng thái các engine.
+  /// Gọi GET /health, trả về chuỗi tóm tắt trạng thái dịch vụ.
   Future<String> health(String baseUrl) async {
     late http.Response res;
     try {
@@ -199,10 +192,9 @@ class ApiService {
     }
     final data = await _decode(res);
     final gemini = data['gemini'] == true ? '✅' : '❌';
-    final voicevox = data['voicevox'] == true ? '✅' : '❌';
-    final rvc = data['rvc'] == true ? '✅' : '❌';
+    final fishAudio = data['fish_audio'] == true ? '✅' : '❌';
     return 'Backend ${data['status']} · chế độ ${data['mode']}\n'
-        'Gemini $gemini · VOICEVOX $voicevox · RVC $rvc';
+        'Gemini $gemini · Fish Audio $fishAudio';
   }
 
   /// Xóa một phiên hội thoại.
@@ -229,8 +221,9 @@ class ApiService {
 final apiServiceProvider = Provider<ApiService>((ref) => ApiService());
 
 /// Provider trả về AppSettings hiện tại — đọc từ repository.
-final appSettingsProvider =
-    NotifierProvider<AppSettingsNotifier, AppSettings>(AppSettingsNotifier.new);
+final appSettingsProvider = NotifierProvider<AppSettingsNotifier, AppSettings>(
+  AppSettingsNotifier.new,
+);
 
 class AppSettingsNotifier extends Notifier<AppSettings> {
   @override

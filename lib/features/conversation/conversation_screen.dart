@@ -62,6 +62,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(conversationViewModelProvider);
     final settings = ref.watch(appSettingsProvider);
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final latestMiku = state.activeReply.isNotEmpty
         ? state.activeReply
         : state.messages.where((m) => m.isMiku).lastOrNull?.text ??
@@ -69,7 +70,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
     return Scaffold(
       backgroundColor: _background,
-      resizeToAvoidBottomInset: true,
+      // Giữ nguyên viewport Flutter/Unity khi bàn phím mở. Chỉ composer được
+      // dịch lên bằng transform ở dưới, nên camera 3D không đổi tỷ lệ.
+      resizeToAvoidBottomInset: false,
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -114,32 +117,43 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   const SizedBox(height: 12),
                   _SubtitleCard(text: latestMiku, phase: state.phase),
                   const SizedBox(height: 18),
-                  AnimatedSwitcher(
+                  AnimatedContainer(
                     duration: const Duration(milliseconds: 220),
-                    child: _showComposer
-                        ? _Composer(
-                            key: const ValueKey('composer'),
-                            controller: _textController,
-                            focusNode: _textFocus,
-                            enabled: !state.isBusy,
-                            hint: '${settings.mode} · ${settings.jlptLevel}',
-                            onSend: _sendText,
-                            onClose: () {
-                              _textFocus.unfocus();
-                              setState(() => _showComposer = false);
-                            },
-                          )
-                        : _ControlDock(
-                            key: const ValueKey('controls'),
-                            state: state,
-                            soundEnabled: _soundEnabled,
-                            onKeyboard: _openComposer,
-                            onSound: () {
-                              final enabled = !_soundEnabled;
-                              setState(() => _soundEnabled = enabled);
-                              ref.read(audioServiceProvider).setMuted(!enabled);
-                            },
-                          ),
+                    curve: Curves.easeOutCubic,
+                    transform: Matrix4.translationValues(
+                      0,
+                      _showComposer ? -keyboardInset : 0,
+                      0,
+                    ),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      child: _showComposer
+                          ? _Composer(
+                              key: const ValueKey('composer'),
+                              controller: _textController,
+                              focusNode: _textFocus,
+                              enabled: !state.isBusy,
+                              hint: '${settings.mode} · ${settings.jlptLevel}',
+                              onSend: _sendText,
+                              onClose: () {
+                                _textFocus.unfocus();
+                                setState(() => _showComposer = false);
+                              },
+                            )
+                          : _ControlDock(
+                              key: const ValueKey('controls'),
+                              state: state,
+                              soundEnabled: _soundEnabled,
+                              onKeyboard: _openComposer,
+                              onSound: () {
+                                final enabled = !_soundEnabled;
+                                setState(() => _soundEnabled = enabled);
+                                ref
+                                    .read(audioServiceProvider)
+                                    .setMuted(!enabled);
+                              },
+                            ),
+                    ),
                   ),
                 ],
               ),
@@ -252,7 +266,10 @@ class _StatusPill extends StatelessWidget {
         'ĐANG NGHE · ${recordingSeconds}s',
         const Color(0xFFFF668A),
       ),
-      ConversationPhase.uploading => ('ĐANG GỬI', const Color(0xFFFFD166)),
+      ConversationPhase.recognizing => (
+        'ĐANG NHẬN DẠNG',
+        const Color(0xFFFFD166),
+      ),
       ConversationPhase.thinking => ('ĐANG SUY NGHĨ', const Color(0xFF52F4DE)),
       ConversationPhase.synthesizing => (
         'ĐANG CHUẨN BỊ GIỌNG NÓI',
@@ -357,14 +374,23 @@ class _ControlDock extends ConsumerWidget {
           size: 52,
         ),
         const SizedBox(width: 20),
-        Listener(
-          onPointerDown: state.isBusy ? null : (_) => notifier.startRecording(),
-          onPointerUp: state.isBusy
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: state.isBusy
               ? null
-              : (_) => notifier.stopRecordingAndSend(),
-          onPointerCancel: state.isBusy
+              : () {
+                  if (recording) {
+                    notifier.stopVoiceRecognitionAndSend();
+                  } else {
+                    notifier.startVoiceRecognition();
+                  }
+                },
+          onLongPressStart: state.isBusy || recording
               ? null
-              : (_) => notifier.cancelRecording(),
+              : (_) => notifier.startVoiceRecognition(),
+          onLongPressEnd: state.isBusy
+              ? null
+              : (_) => notifier.stopVoiceRecognitionAndSend(),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             width: 76,

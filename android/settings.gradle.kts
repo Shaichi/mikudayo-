@@ -25,3 +25,4 @@ plugins {
 
 include(":app")
 include(":unityLibrary")
+project(":unityLibrary").projectDir = file("../android_room/android/unityLibrary")
