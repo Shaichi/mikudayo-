@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import io
 import unittest
+import wave
 from unittest.mock import patch
 
-from app.services.fish_audio_service import FishAudioService
+from app.services.fish_audio_service import FishAudioService, add_wav_preroll
 
 
 class _FakeResponse:
@@ -61,6 +63,22 @@ class FishAudioServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(service.check_health())
         with self.assertRaises(RuntimeError):
             await service.synthesize("こんにちは")
+
+
+    def test_wav_preroll_preserves_audio_after_silence(self) -> None:
+        source = FishAudioService.mock_wav()
+        padded = add_wav_preroll(source, 300)
+
+        with wave.open(io.BytesIO(source.data), "rb") as original:
+            original_frames = original.readframes(original.getnframes())
+            sample_rate = original.getframerate()
+            frame_width = original.getnchannels() * original.getsampwidth()
+        with wave.open(io.BytesIO(padded.data), "rb") as result:
+            result_frames = result.readframes(result.getnframes())
+
+        silence_bytes = round(sample_rate * 0.3) * frame_width
+        self.assertEqual(result_frames[:silence_bytes], bytes(silence_bytes))
+        self.assertEqual(result_frames[silence_bytes:], original_frames)
 
 
 if __name__ == "__main__":

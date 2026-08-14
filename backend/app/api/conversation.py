@@ -31,6 +31,7 @@ from ..services.gemini_service import GeminiService
 from ..services.fish_audio_service import (
     AudioPayload,
     FishAudioService,
+    add_wav_preroll,
     media_type_for_extension,
 )
 from ..services.lipsync_service import compute_mouth_cues
@@ -257,6 +258,7 @@ async def _generate_audio(
 
     # Dùng WAV mặc định để giữ lip-sync RMS. MP3/Opus vẫn phát được nhưng không
     # được giải mã lại ở backend nhằm tránh thêm ffmpeg/local audio processing.
+    audio = add_wav_preroll(audio, settings.FISH_AUDIO_PREROLL_MS)
     mouth_cues = compute_mouth_cues(audio.data) if audio.extension == "wav" else []
     return audio, voice_mode, mouth_cues, timing
 

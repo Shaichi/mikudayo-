@@ -145,6 +145,35 @@ def media_type_for_extension(extension: str) -> str:
     return _MEDIA_TYPES.get(extension.lower().lstrip("."), "application/octet-stream")
 
 
+def add_wav_preroll(audio: AudioPayload, duration_ms: int) -> AudioPayload:
+    """Prepend PCM silence so Android audio-focus fade-in cannot eat speech."""
+    if audio.extension != "wav" or duration_ms <= 0:
+        return audio
+
+    try:
+        with wave.open(io.BytesIO(audio.data), "rb") as source:
+            channels = source.getnchannels()
+            sample_width = source.getsampwidth()
+            sample_rate = source.getframerate()
+            compression = source.getcomptype()
+            compression_name = source.getcompname()
+            frames = source.readframes(source.getnframes())
+
+        silence_frames = max(0, round(sample_rate * duration_ms / 1000))
+        silence = bytes(silence_frames * channels * sample_width)
+        output = io.BytesIO()
+        with wave.open(output, "wb") as target:
+            target.setnchannels(channels)
+            target.setsampwidth(sample_width)
+            target.setframerate(sample_rate)
+            target.setcomptype(compression, compression_name)
+            target.writeframes(silence + frames)
+        return AudioPayload(output.getvalue(), audio.extension, audio.media_type)
+    except (EOFError, wave.Error) as exc:
+        logger.warning("Cannot add WAV preroll: %s", exc)
+        return audio
+
+
 def _mock_wav() -> bytes:
     """Generate a short WAV tone for UI development without spending API quota."""
     sample_rate = 16000
@@ -172,4 +201,9 @@ def _mock_wav() -> bytes:
     return buffer.getvalue()
 
 
-__all__ = ["AudioPayload", "FishAudioService", "media_type_for_extension"]
+__all__ = [
+    "AudioPayload",
+    "FishAudioService",
+    "add_wav_preroll",
+    "media_type_for_extension",
+]

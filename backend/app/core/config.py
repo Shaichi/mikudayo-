@@ -46,6 +46,8 @@ class Settings:
     # WAV mặc định để giữ lip-sync RMS hiện tại. Có thể đổi thành mp3/opus nếu
     # chấp nhận không có mouth cues phía backend.
     FISH_AUDIO_FORMAT: str = _env("FISH_AUDIO_FORMAT", "wav")
+    # Give Android time to acquire audio focus before the first syllable.
+    FISH_AUDIO_PREROLL_MS: int = int(_env("FISH_AUDIO_PREROLL_MS", "300"))
     FISH_LATENCY: str = _env("FISH_LATENCY", "low")
     FISH_TIMEOUT: float = float(_env("FISH_TIMEOUT", "60"))
     FISH_TEMPERATURE: float = float(_env("FISH_TEMPERATURE", "0.7"))
