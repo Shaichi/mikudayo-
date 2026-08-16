@@ -124,6 +124,36 @@ class ConversationViewModel extends Notifier<ConversationState> {
   SpeechRecognitionService get _speech =>
       ref.read(speechRecognitionServiceProvider);
 
+  // ---------- Gesture: mapping + chào ----------
+
+  /// Gesture cho một lượt: ưu tiên Gemini, fallback theo emotion.
+  static MikuGesture gestureFor(ConversationResult result) =>
+      result.gesture == MikuGesture.none
+          ? _emotionGestureFallback[result.emotion] ?? MikuGesture.none
+          : result.gesture;
+
+  static const _emotionGestureFallback = {
+    MikuEmotion.happy: MikuGesture.clap,
+    MikuEmotion.excited: MikuGesture.clap,
+    MikuEmotion.thinking: MikuGesture.thinking,
+    MikuEmotion.sad: MikuGesture.sad,
+  };
+
+  static final RegExp _greetingPattern =
+      RegExp(r'(こんにちは|こんばんは|おはよう|はじめまして)');
+
+  bool _waveShown = false;
+
+  /// Lượt đầu tiên của session mà người dùng chào → vẫy tay một lần.
+  bool get _isGreetingTurn {
+    if (state.messages.any((m) => m.isMiku)) return false;
+    final lastUser = state.messages.lastWhere(
+      (m) => m.isUser,
+      orElse: () => const Message(kind: MessageKind.system, text: ''),
+    );
+    return lastUser.isUser && _greetingPattern.hasMatch(lastUser.text);
+  }
+
   void addSystemMessage(String text) {
     state = state.copyWith(
       messages: [
@@ -331,6 +361,12 @@ class ConversationViewModel extends Notifier<ConversationState> {
 
     // Cập nhật avatar emotion trước khi phát.
     final avatar = ref.read(avatarControllerProvider.notifier);
+    // Vẫy tay một lần cho lượt chào đầu tiên.
+    if (!_waveShown && _isGreetingTurn) {
+      _waveShown = true;
+      avatar.playGesture(MikuGesture.wave);
+    }
+
     avatar.setEmotion(result.emotion);
 
     // Text đã hiển thị ngay; đợi job giọng nền rồi stream URL trực tiếp.
@@ -338,6 +374,7 @@ class ConversationViewModel extends Notifier<ConversationState> {
       var audioUrl = result.audioUrl;
       var mouthCues = result.mouthCues;
       if (result.voiceMode == 'pending') {
+        avatar.playGesture(MikuGesture.thinking);
         final audioStatus = await _repo.waitForAudio(
           serverUrl: _settings.serverUrl,
           turnId: result.turnId,
@@ -347,6 +384,7 @@ class ConversationViewModel extends Notifier<ConversationState> {
       }
 
       if (audioUrl.isNotEmpty) {
+        avatar.stopGesture(); // cắt thinking trước khi phát audio mới
         await _audio.prepareUrl(_settings.serverUrl + audioUrl);
         state = state.copyWith(phase: ConversationPhase.playing);
         final playback = _audio.play();
@@ -356,6 +394,9 @@ class ConversationViewModel extends Notifier<ConversationState> {
       // Audio nền lỗi không làm mất câu trả lời text đã có.
     }
     avatar.stopMouth();
+
+    // Gesture theo ngữ cảnh trả lời (sau khi audio đã bắt đầu phát).
+    avatar.playGesture(gestureFor(result));
 
     state = ConversationState(
       phase: ConversationPhase.idle,
