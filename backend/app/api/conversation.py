@@ -183,6 +183,7 @@ async def conversation_turn(
         correction_ja=out.correction_ja,
         explanation_vi=out.explanation_vi,
         emotion=out.emotion,
+        gesture=out.gesture,
         vocabulary=out.vocabulary,
         audio_url="",
         voice_mode="pending",

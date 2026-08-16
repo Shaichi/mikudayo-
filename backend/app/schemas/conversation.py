@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 Mode = Literal["free_talk", "correction", "roleplay"]
 JpLevel = Literal["N5", "N4", "N3"]
 Emotion = Literal["neutral", "happy", "excited", "thinking", "embarrassed", "sad"]
+Gesture = Literal["none", "wave", "nod", "clap", "sad", "thinking", "surprise"]
 VoiceMode = Literal["pending", "fish_audio", "mock", "none"]
 AudioStatusValue = Literal["pending", "ready", "error"]
 
@@ -35,6 +36,7 @@ class GeminiTurnOutput(BaseModel):
     correction_ja: Optional[str] = Field(default=None, description="Câu sửa ngữ pháp nếu có")
     explanation_vi: Optional[str] = Field(default=None, description="Giải thích lỗi bằng tiếng Việt")
     emotion: Emotion = Field(default="neutral", description="Cảm xúc của Miku")
+    gesture: Gesture = Field(default="none", description="Cử chỉ thân/tay cho avatar")
     difficulty: JpLevel = Field(default="N5", description="Độ khó nhận định")
     vocabulary: list[VocabItem] = Field(default_factory=list, description="Từ mới trong lượt")
 
@@ -58,6 +60,7 @@ class ConversationResult(BaseModel):
     correction_ja: Optional[str] = None
     explanation_vi: Optional[str] = None
     emotion: Emotion = "neutral"
+    gesture: Gesture = "none"
     vocabulary: list[VocabItem] = Field(default_factory=list)
     audio_url: str = Field(description="URL để Flutter phát audio (có thể rỗng ở mock)")
     voice_mode: VoiceMode = "fish_audio"
