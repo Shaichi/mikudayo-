@@ -21,6 +21,14 @@ namespace Mikudayo.Avatar
         public ModelController ModelController;
         public Vrm10MouthCueDriver MouthDriver;
 
+        // TEMP (gesture spike): replaced by the Task 2 command API.
+        public MikuGestureController GestureController;
+
+        public void TestGesture(string name)
+        {
+            GestureController?.Play(name.Trim());
+        }
+
         private void Awake()
         {
             if (ModelController == null) ModelController = GetComponent<ModelController>();

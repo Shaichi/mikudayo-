@@ -53,6 +53,27 @@ namespace Mikudayo.Avatar.Editor
             var relaxedPose = avatar.AddComponent<MikuRelaxedPose>();
             relaxedPose.Animator = animator;
 
+            var gestureController = avatar.AddComponent<MikuGestureController>();
+            gestureController.AvatarRoot = avatar;
+
+            // VRMA retargeting needs Vrm10RuntimeControlRig. In UniVRM
+            // 0.127.2 m_useControlRig is a private non-serialized field with
+            // no public setter, so SerializedObject cannot flip it; the
+            // actual rig is built by MikuGestureController on demand at
+            // runtime. The write below documents the intent and becomes a
+            // real no-op toggle should the field ever be serialized.
+            var vrmInstance = avatar.GetComponent<UniVRM10.Vrm10Instance>();
+            if (vrmInstance != null)
+            {
+                var serialized = new UnityEditor.SerializedObject(vrmInstance);
+                var useControlRig = serialized.FindProperty("m_useControlRig");
+                if (useControlRig != null && !useControlRig.boolValue)
+                {
+                    useControlRig.boolValue = true;
+                    serialized.ApplyModifiedPropertiesWithoutUndo();
+                }
+            }
+
             var bridgeObject = new GameObject("MikuAvatarBridge");
             var audioSource = bridgeObject.AddComponent<AudioSource>();
             audioSource.playOnAwake = false;
@@ -71,6 +92,7 @@ namespace Mikudayo.Avatar.Editor
             var bridge = bridgeObject.AddComponent<MikuAvatarBridge>();
             bridge.ModelController = modelController;
             bridge.MouthDriver = mouth;
+            bridge.GestureController = gestureController;
             var demo = bridgeObject.AddComponent<MikuAvatarAutoDemo>();
             demo.Bridge = bridge;
             var smokeCapture = bridgeObject.AddComponent<MikuAvatarSmokeCapture>();

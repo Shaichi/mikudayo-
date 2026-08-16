@@ -22,6 +22,9 @@ namespace Mikudayo.Avatar
             if (Bridge == null) Bridge = GetComponent<MikuAvatarBridge>();
             yield return new WaitForSeconds(1.5f);
 
+            // TEMP (gesture spike): wave once shortly after start.
+            Bridge.TestGesture("wave");
+
             var index = 0;
             while (true)
             {
