@@ -1,6 +1,6 @@
 # PROJECT STATUS / HANDOFF FOR GLM 5.2
 
-> **Nguồn sự thật hiện tại của dự án — cập nhật ngày 2026-08-14.**
+> **Nguồn sự thật hiện tại của dự án — cập nhật ngày 2026-08-16.**
 > Hãy đọc toàn bộ file này trước khi sửa code. `HANDOFF.md`, `README.md` và một số comment cũ có thể chưa phản ánh hết trạng thái mới nhất.
 
 ## 1. Mục tiêu sản phẩm
@@ -41,8 +41,9 @@ Yêu cầu quan trọng của chủ dự án:
 | Khóa portrait | Đã code và build APK | Chưa kiểm tra trực quan lại trên máy sau bản build cuối |
 | Zoom Miku mới | Đã code, export Unity và build APK | Chưa kiểm tra trực quan lại trên máy sau bản build cuối |
 | Keyboard chỉ đẩy ô text | Đã code và build APK | Chưa kiểm tra trực quan lại trên máy sau bản build cuối |
+| Gesture VRMA + idle pool của Unity | Đã code, export Unity và build APK | Wave/clap/thinking/sad/surprise + idle tự nhiên; chờ kiểm tra trực quan trên máy thật |
 | `flutter analyze` | Đạt | `No issues found` ở lần chạy gần nhất |
-| APK debug mới nhất | Đã build | 507,185,909 bytes; đường dẫn ở mục 8 |
+| APK debug mới nhất | Đã build | 415,728,437 bytes (2026-08-16); đường dẫn ở mục 8 |
 
 ## 3. Kiến trúc runtime hiện tại
 
@@ -190,6 +191,18 @@ Mục tiêu bố cục: mặt nằm gần 1/3 phía trên, thân chiếm phần 
 
 Source Unity đã được prepare, scene đã serialize `distanceMultiplier: 0.68`, module Unity đã export lại và Flutter APK đã build thành công. Tuy nhiên ADB mất kết nối sau quá trình Unity build, nên **bản zoom/portrait/keyboard mới nhất chưa được nhìn lại trực tiếp trên điện thoại**. Đây là việc ưu tiên số 1 khi tiếp tục.
 
+### 5.4 Hệ gesture VRMA (mốc 2026-08-16)
+
+Avatar hiện có gesture clip VRMA phát trên skeleton VRM kèm fade in/out, cộng một lớp idle tự nhiên chạy liên tục:
+
+- `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuGestureController.cs` — load clip VRMA từ Resources TextAsset, phát trên ControlRig, fade weight vào/ra để không giật khi bắt đầu/kết thúc. Clip nằm tại `Resources/vrma_gestures/*.vrma.bytes` (Resources path `vrma_gestures/<name>.vrma`): **wave, clap, thinking, sad, surprise**. Clip `nod` chưa có: khi Gemini trả gesture "nod", Unity log cảnh báo `gesture asset not found` và no-op (không crash).
+- `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuIdlePool.cs` — các biến thể idle (nhún vai, đảo trọng tâm…) cộng head glance chậm, chạy trong `LateUpdate` với `[DefaultExecutionOrder(10500)]` (sau `MikuRelaxedPose` ở 10000), đóng băng trong lúc phát gesture.
+- `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuAvatarBridge.cs` — nhận lệnh từ Flutter: `PlayGesture(message)` với payload JSON `{"gesture":"name"}`, `StopGesture(message)` dừng ngay kèm fade out.
+
+Flutter trigger (`lib/features/conversation/conversation_view_model.dart`): câu chào → `wave`; lúc chờ audio TTS → `thinking`; khi audio bắt đầu phát → `stopGesture` (cắt thinking); sau mỗi lượt trả lời → gesture theo emotion/result của backend. Backend (`backend/app/api/conversation.py`) truyền trường `gesture` từ Gemini response tới Flutter.
+
+Nguồn + license clip VRMA: tải từ repo **github.com/tk256ailab/vrm-viewer (MIT License)**, đổi tên thành `*.vrma.bytes` để Unity import dạng TextAsset.
+
 ## 6. Cách khởi động backend
 
 Cách đơn giản nhất:
@@ -245,7 +258,7 @@ Sau mỗi thay đổi Unity source/scene, phải prepare và export lại. Các 
   -projectPath 'C:\Users\pc\Desktop\mikudayo\unity\MikuAvatar' `
   -executeMethod Mikudayo.Avatar.Editor.MikuProjectSetup.PrepareEmbeddedScene `
   -quit `
-  -logFile 'C:\Users\pc\Desktop\mikudayo\50-portrait-prepare.log'
+  -logFile 'C:\Users\pc\Desktop\mikudayo\64-gesture-prepare.log'
 
 & 'D:\Unity\Hub\Editor\6000.3.3f1\Editor\Unity.exe' `
   -batchmode -nographics -buildTarget Android `
@@ -253,7 +266,7 @@ Sau mỗi thay đổi Unity source/scene, phải prepare và export lại. Các 
   -executeMethod ProjectExporterBatchmode.ExportProject `
   -exportPath 'C:\Users\pc\Desktop\mikudayo\android_room\android\unityLibrary' `
   -quit `
-  -logFile 'C:\Users\pc\Desktop\mikudayo\51-portrait-export.log'
+  -logFile 'C:\Users\pc\Desktop\mikudayo\65-gesture-export.log'
 ```
 
 Log lần gần nhất có:
@@ -283,8 +296,8 @@ C:\Users\pc\Desktop\mikudayo\build\app\outputs\flutter-apk\app-debug.apk
 Thông tin build gần nhất:
 
 ```text
-Kích thước: 507,185,909 bytes
-Thời điểm: 2026-08-14 16:48:06
+Kích thước: 415,728,437 bytes
+Thời điểm: 2026-08-16 23:17:20 (bản có gesture VRMA)
 ```
 
 Cài lại khi điện thoại xuất hiện trong `adb devices`:
@@ -314,6 +327,14 @@ Build sạch Unity IL2CPP cho ARMv7 + ARM64 có thể mất khoảng 20 phút. K
 | `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuCameraFramer.cs` | Crop/zoom camera Miku |
 | `unity/MikuAvatar/Assets/Mikudayo/Editor/MikuProjectSetup.cs` | Tạo/prepare embedded Unity scene |
 | `unity/MikuAvatar/Assets/Mikudayo/Scenes/MikuAvatar.unity` | Scene đã serialize |
+| `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuGestureController.cs` | Phát VRMA gesture, fade in/out |
+| `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuIdlePool.cs` | Idle biến thể + head glance, LateUpdate order 10500 |
+| `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuAvatarBridge.cs` | Lệnh PlayGesture/StopGesture từ Flutter |
+| `unity/MikuAvatar/Assets/Mikudayo/Resources/vrma_gestures/*.vrma.bytes` | Clip gesture VRMA (wave, clap, thinking, sad, surprise) |
+| `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuGestureDemoHarness.cs` | Harness demo trigger gesture trong Unity |
+| `lib/data/models/conversation_turn.dart` | Enum `MikuGesture` + parse từ API |
+| `lib/avatar/avatar_controller.dart` | `playGesture`/`stopGesture` đẩy qua bridge |
+| `lib/features/conversation/conversation_view_model.dart` | Trigger gesture (wave chào, thinking chờ audio, gesture theo kết quả) |
 
 ## 10. Vấn đề đã biết và việc chưa hoàn tất
 
@@ -325,7 +346,16 @@ Build sạch Unity IL2CPP cho ARMv7 + ARM64 có thể mất khoảng 20 phút. K
    - Miku đã zoom gần giống ảnh tham chiếu;
    - mở bàn phím không làm Miku co lại;
    - chỉ ô nhập text được đẩy lên trên bàn phím.
-3. Điền `FISH_API_KEY`, thử microphone Google → transcript → Gemini → Fish Audio và quan sát emotion/avatar end-to-end.
+3. Checklist trực quan hệ gesture (mốc 2026-08-16 — tất cả đang chờ kiểm tra trên máy thật):
+   1. Chờ 30s không làm gì: thế tay đổi ≥2 kiểu, đầu liếc, không giật/drift.
+   2. Nói/nhập câu chào (`こんばんは`): Miku vẫy tay 1 lần.
+   3. Trong lúc chờ giọng: chống cằm/nghiêng đầu; khi audio phát thì gesture cắt mượt.
+   4. Câu trả lời vui: vỗ tay; buồn: cúi đầu; tay không văng khỏi khung dọc.
+   5. Vài lượt liên tiếp: không crash, không kẹt pose, portrait/zoom/keyboard không đổi.
+4. Điền `FISH_API_KEY`, thử microphone Google → transcript → Gemini → Fish Audio và quan sát emotion/gesture/avatar end-to-end.
+5. Nếu biên độ idle quá mờ hoặc quá lố trên máy thật, tune hệ số biên độ trong `MikuIdlePool.cs`, prepare + export + build lại.
+6. Thiếu clip `nod.vrma`: tìm hoặc tự làm clip nod cho vào `Resources/vrma_gestures/` (hiện tại Gemini trả "nod" chỉ log cảnh báo và không phát gì).
+7. Polish tùy chọn: gọi `avatar.stopGesture()` ngay trước `avatar.playGesture(gestureFor(result))` trong `_completeTurn` để một lần chờ TTS lỗi không để gesture "thinking" bị kẹt.
 
 ### Kỹ thuật cần dọn sau khi UI được duyệt
 
