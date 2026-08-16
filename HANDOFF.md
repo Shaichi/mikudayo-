@@ -297,7 +297,7 @@ Thông tin build gần nhất:
 
 ```text
 Kích thước: 415,998,826 bytes
-Thời điểm: 2026-08-17 01:01:47 (bản có gesture VRMA + fix shader URP để VRMA chạy trên Android)
+Thời điểm: 2026-08-17 01:05:15 (bản có gesture VRMA + fix shader URP + polish review cuối)
 ```
 
 Cài lại khi điện thoại xuất hiện trong `adb devices`:
