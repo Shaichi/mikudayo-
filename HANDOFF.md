@@ -43,7 +43,7 @@ Yêu cầu quan trọng của chủ dự án:
 | Keyboard chỉ đẩy ô text | Đã code và build APK | Chưa kiểm tra trực quan lại trên máy sau bản build cuối |
 | Gesture VRMA + idle pool của Unity | Đã code, export Unity và build APK | Wave/clap/thinking/sad/surprise + idle tự nhiên; chờ kiểm tra trực quan trên máy thật |
 | `flutter analyze` | Đạt | `No issues found` ở lần chạy gần nhất |
-| APK debug mới nhất | Đã build | 415,728,437 bytes (2026-08-16); đường dẫn ở mục 8 |
+| APK debug mới nhất | Đã build | 415,998,826 bytes (2026-08-17, có fix shader VRMA); đường dẫn ở mục 8 |
 
 ## 3. Kiến trúc runtime hiện tại
 
@@ -296,8 +296,8 @@ C:\Users\pc\Desktop\mikudayo\build\app\outputs\flutter-apk\app-debug.apk
 Thông tin build gần nhất:
 
 ```text
-Kích thước: 415,728,437 bytes
-Thời điểm: 2026-08-16 23:17:20 (bản có gesture VRMA)
+Kích thước: 415,998,826 bytes
+Thời điểm: 2026-08-17 01:01:47 (bản có gesture VRMA + fix shader URP để VRMA chạy trên Android)
 ```
 
 Cài lại khi điện thoại xuất hiện trong `adb devices`:
