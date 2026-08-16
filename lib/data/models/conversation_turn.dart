@@ -38,6 +38,24 @@ enum MikuEmotion {
   };
 }
 
+/// Cử chỉ thân/tay của Miku (Unity phát qua VRMA).
+enum MikuGesture {
+  none,
+  wave,
+  nod,
+  clap,
+  sad,
+  thinking,
+  surprise;
+
+  static MikuGesture fromApi(String? raw) {
+    for (final g in MikuGesture.values) {
+      if (g.name == raw) return g;
+    }
+    return MikuGesture.none;
+  }
+}
+
 /// Một từ vựng mới trong lượt hội thoại.
 class VocabItem {
   const VocabItem({required this.word, this.reading = '', this.meaningVi = ''});
@@ -76,6 +94,7 @@ class ConversationResult {
     this.correctionJa,
     this.explanationVi,
     this.emotion = MikuEmotion.neutral,
+    this.gesture = MikuGesture.none,
     this.vocabulary = const [],
     this.audioUrl = '',
     this.voiceMode = 'mock',
@@ -90,6 +109,7 @@ class ConversationResult {
   final String? correctionJa;
   final String? explanationVi;
   final MikuEmotion emotion;
+  final MikuGesture gesture;
   final List<VocabItem> vocabulary;
   final String audioUrl;
   final String voiceMode;
@@ -105,6 +125,7 @@ class ConversationResult {
       correctionJa: json['correction_ja'] as String?,
       explanationVi: json['explanation_vi'] as String?,
       emotion: MikuEmotion.fromApi(json['emotion'] as String?),
+      gesture: MikuGesture.fromApi(json['gesture'] as String?),
       vocabulary: ((json['vocabulary'] as List?) ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(VocabItem.fromJson)

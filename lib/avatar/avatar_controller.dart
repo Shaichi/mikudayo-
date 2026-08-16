@@ -14,6 +14,42 @@ import 'live2d_bridge.dart';
 class AvatarController extends Notifier<AvatarState> {
   Live2dBridge _bridge = NoopLive2dBridge();
 
+  /// Standalone fallback: `Notifier.state` requires a provider element, so
+  /// tests that call `AvatarController()` + `build()` directly (without a
+  /// `ProviderContainer`) get a local state holder instead. In-app, the
+  /// provider always supplies `_element`, so Riverpod state is used and this
+  /// field is never touched.
+  AvatarState? _standaloneState;
+
+  /// `late final _element` throws a private `LateInitializationError`
+  /// ("Field '_element' has not been initialized") when the notifier is used
+  /// outside a provider. Detect exactly that error; rethrow anything else.
+  static bool _isMissingElement(Object e) =>
+      e is Error && e.toString().contains('has not been initialized');
+
+  @override
+  AvatarState get state {
+    try {
+      return super.state;
+    } catch (e) {
+      if (_isMissingElement(e)) return _standaloneState ??= build();
+      rethrow;
+    }
+  }
+
+  @override
+  set state(AvatarState value) {
+    try {
+      super.state = value;
+    } catch (e) {
+      if (_isMissingElement(e)) {
+        _standaloneState = value;
+        return;
+      }
+      rethrow;
+    }
+  }
+
   @override
   AvatarState build() {
     return const AvatarState(emotion: MikuEmotion.neutral);
@@ -24,6 +60,15 @@ class AvatarController extends Notifier<AvatarState> {
   void setEmotion(MikuEmotion emotion) {
     _bridge.setExpression(emotion);
     state = state.copyWith(emotion: emotion);
+  }
+
+  void playGesture(MikuGesture gesture) {
+    if (gesture == MikuGesture.none) return;
+    state = state.copyWith(gesture: gesture, gestureSeq: state.gestureSeq + 1);
+  }
+
+  void stopGesture() {
+    state = state.copyWith(gesture: MikuGesture.none, gestureSeq: state.gestureSeq + 1);
   }
 
   /// Phát lip-sync theo mouth cues. Chỉ đặt state 1 lần; web/UI tự chạy.
@@ -47,6 +92,8 @@ class AvatarState {
     this.emotion = MikuEmotion.neutral,
     this.speechSeq = 0,
     this.mouthCues = const [],
+    this.gesture = MikuGesture.none,
+    this.gestureSeq = 0,
   });
 
   final MikuEmotion emotion;
@@ -57,14 +104,21 @@ class AvatarState {
   /// Mouth cues đang chờ web phát (web đọc 1 lần, rồi tự nội suy).
   final List<MouthCue> mouthCues;
 
+  final MikuGesture gesture;
+  final int gestureSeq;
+
   AvatarState copyWith({
     MikuEmotion? emotion,
     int? speechSeq,
     List<MouthCue>? mouthCues,
+    MikuGesture? gesture,
+    int? gestureSeq,
   }) => AvatarState(
     emotion: emotion ?? this.emotion,
     speechSeq: speechSeq ?? this.speechSeq,
     mouthCues: mouthCues ?? this.mouthCues,
+    gesture: gesture ?? this.gesture,
+    gestureSeq: gestureSeq ?? this.gestureSeq,
   );
 }
 

@@ -23,6 +23,7 @@ class _UnityAvatarState extends ConsumerState<UnityAvatar>
   bool _ready = false;
   MikuEmotion? _lastEmotion;
   int _lastSpeechSeq = -1;
+  int _lastGestureSeq = -1;
   Timer? _handshakeTimer;
   int _handshakeAttempt = 0;
 
@@ -61,6 +62,7 @@ class _UnityAvatarState extends ConsumerState<UnityAvatar>
         _ready = true;
         _lastEmotion = null;
         _lastSpeechSeq = -1;
+        _lastGestureSeq = -1;
         debugPrint('[Avatar] Unity handshake=${message['type']}');
         _sync(ref.read(avatarControllerProvider));
       }
@@ -107,6 +109,18 @@ class _UnityAvatarState extends ConsumerState<UnityAvatar>
         'SetEmotion',
         jsonEncode({'emotion': state.emotion.name}),
       );
+    }
+    if (state.gestureSeq != _lastGestureSeq) {
+      _lastGestureSeq = state.gestureSeq;
+      if (state.gesture == MikuGesture.none) {
+        sendToUnity(_bridgeObject, 'StopGesture', '');
+      } else {
+        sendToUnity(
+          _bridgeObject,
+          'PlayGesture',
+          jsonEncode({'gesture': state.gesture.name}),
+        );
+      }
     }
     if (state.speechSeq != _lastSpeechSeq) {
       _lastSpeechSeq = state.speechSeq;
