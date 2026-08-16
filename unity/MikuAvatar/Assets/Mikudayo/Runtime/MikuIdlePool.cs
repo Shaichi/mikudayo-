@@ -4,12 +4,15 @@ namespace Mikudayo.Avatar
 {
     /// <summary>
     /// Cross-fades between a small pool of upper-body idle variants at random
-    /// intervals and adds a slow head glance. Runs at execution order 9000 so
-    /// MikuRelaxedPose (10000) still layers breathing/head sway on top of the
-    /// rest targets this class writes each Update. While a VRMA gesture plays
-    /// the pool is frozen to stop the rest pose from shifting underneath.
+    /// intervals and adds a slow head glance. Runs in LateUpdate at execution
+    /// order 10500 — after MikuRelaxedPose (10000) has rewritten the bones
+    /// from the VRM rest pose this frame, and before Vrm10Instance (11000)
+    /// retargets them while a VRMA gesture plays — so the variant offsets
+    /// layer on top of the breathing/sway instead of being overwritten by it.
+    /// While a VRMA gesture plays the pool is frozen so its targets do not
+    /// shift underneath.
     /// </summary>
-    [DefaultExecutionOrder(9000)]
+    [DefaultExecutionOrder(10500)]
     public sealed class MikuIdlePool : MonoBehaviour
     {
         public Animator Animator;
@@ -36,12 +39,6 @@ namespace Mikudayo.Avatar
         private Transform leftLowerArm;
         private Transform rightLowerArm;
         private Transform head;
-
-        private Quaternion leftUpperArmRest;
-        private Quaternion rightUpperArmRest;
-        private Quaternion leftLowerArmRest;
-        private Quaternion rightLowerArmRest;
-        private Quaternion headRest;
 
         private int _current;
         private int _target;
@@ -72,11 +69,6 @@ namespace Mikudayo.Avatar
                 return;
             }
 
-            leftUpperArmRest = leftUpperArm.localRotation;
-            rightUpperArmRest = rightUpperArm.localRotation;
-            leftLowerArmRest = leftLowerArm.localRotation;
-            rightLowerArmRest = rightLowerArm.localRotation;
-            if (head != null) headRest = head.localRotation;
             _holdUntil = Time.time + Random.Range(minHoldSeconds, maxHoldSeconds);
         }
 
@@ -91,7 +83,7 @@ namespace Mikudayo.Avatar
             _holdUntil = Time.time + Random.Range(minHoldSeconds, maxHoldSeconds);
         }
 
-        private void Update()
+        private void LateUpdate()
         {
             if (_frozen) return;
             var t = Time.time;
@@ -124,16 +116,16 @@ namespace Mikudayo.Avatar
             {
                 // Chỉ nửa dương của sin: liếc đi một nhịp rồi quay lại.
                 var glance = Mathf.Max(0f, Mathf.Sin(t * 0.17f)) * headGlanceDegrees;
-                head.localRotation = headRest * Quaternion.Euler(0f, glance, 0f);
+                head.localRotation *= Quaternion.Euler(0f, glance, 0f);
             }
         }
 
         private void Apply(float lShoulder, float lElbow, float rShoulder, float rElbow)
         {
-            leftUpperArm.localRotation = leftUpperArmRest * Quaternion.Euler(0f, 0f, lShoulder);
-            rightUpperArm.localRotation = rightUpperArmRest * Quaternion.Euler(0f, 0f, rShoulder);
-            leftLowerArm.localRotation = leftLowerArmRest * Quaternion.Euler(0f, 0f, lElbow);
-            rightLowerArm.localRotation = rightLowerArmRest * Quaternion.Euler(0f, 0f, rElbow);
+            leftUpperArm.localRotation *= Quaternion.Euler(0f, 0f, lShoulder);
+            rightUpperArm.localRotation *= Quaternion.Euler(0f, 0f, rShoulder);
+            leftLowerArm.localRotation *= Quaternion.Euler(0f, 0f, lElbow);
+            rightLowerArm.localRotation *= Quaternion.Euler(0f, 0f, rElbow);
         }
     }
 }
