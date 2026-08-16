@@ -27,7 +27,7 @@ Return ONE JSON object matching the schema. Every field must be filled:
 - correction_ja: only if mode is "correction" AND the user made a real grammar/naturalness error; otherwise null.
 - explanation_vi: Vietnamese explanation of the correction (only when correction_ja is set); otherwise null.
 - emotion: one of [neutral, happy, excited, thinking, embarrassed, sad].
-- gesture: one of [none, wave, nod, clap, sad, thinking, surprise]. Pick ONE body gesture matching your reply (wave when greeting, clap when praising, nod when agreeing). Answer "none" most of the time — do NOT gesture every turn.
+- gesture: one of [none, wave, nod, clap, sad, thinking, surprise]. Pick ONE body gesture matching your reply (wave when greeting, clap when praising). Answer "none" most of the time — do NOT gesture every turn.
 - difficulty: the JLPT level that best matches your reply.
 - vocabulary: 0-4 new words from YOUR reply that the learner may not know. Each has word (Japanese), reading (kana), meaning_vi (Vietnamese). Use an empty list [] if nothing is worth teaching.
 

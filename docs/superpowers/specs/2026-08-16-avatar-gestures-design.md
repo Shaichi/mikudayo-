@@ -155,7 +155,7 @@ Map emotion fallback: `happy/excited → clap`, `sad → sad`,
 
 ### 5.4 Chống spam (logic nằm ở Flutter, Unity cứ nhận là phát)
 
-- Đang có gesture chạy → bỏ qua lệnh mới (trừ `StopGesture`).
+- Lệnh `PlayGesture` mới **thay thế** gesture đang chạy (takeover): gesture cũ cắt và fade sang gesture mới — cần thiết để wave/thinking nhường chỗ giữa các turn.
 - Gesture lặp cùng loại liên tiếp → bỏ lượt thứ hai.
 
 ## 6. Phía Backend

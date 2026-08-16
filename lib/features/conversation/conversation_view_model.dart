@@ -394,6 +394,7 @@ class ConversationViewModel extends Notifier<ConversationState> {
       // Audio nền lỗi không làm mất câu trả lời text đã có.
     }
     avatar.stopMouth();
+    avatar.stopGesture(); // dọn thinking/wave còn treo nếu audio lỗi (gestureFor trả none không tự dọn)
 
     // Gesture theo ngữ cảnh trả lời (sau khi audio đã bắt đầu phát).
     avatar.playGesture(gestureFor(result));
