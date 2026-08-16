@@ -25,20 +25,54 @@ namespace Mikudayo.Avatar
     {
         public GameObject AvatarRoot;
         public string GestureResourcesFolder = "vrma_gestures";
+        [SerializeField, Range(0.1f, 1f)] private float fadeSeconds = 0.3f;
+
+        /// <summary>
+        /// Raised after the gesture ends (naturally or via Stop), once the
+        /// fade-out has finished and the animation has been detached.
+        /// </summary>
+        public Action OnFinished;
 
         private Vrm10Instance _instance;
         private readonly Dictionary<string, LoadedClip> _cache = new();
         private LoadedClip _current;
+        private WeightedVrmaProxy _proxy;
         private Coroutine _routine;
         private bool _playing;
         private bool _attachPending;
         private bool _controlRigChecked;
+        private bool _finishedQueued;
 
         private sealed class LoadedClip
         {
             public Vrm10AnimationInstance Clip;
             public Animation Animation;
             public AnimationClip LegacyClip;
+        }
+
+        /// <summary>
+        /// Bọc clip VRMA: xương vẫn retarget từ clip, nhưng expression map
+        /// chỉ lộ khi weight vượt ngưỡng để biểu cảm fade theo. Runtime
+        /// retarget là all-or-nothing (không có per-bone weight ở bản này)
+        /// nên fade xương thực tế là ramp weight nhanh + detach dứt khoát;
+        /// độ mềm của chuyển tiếp dựa vào lớp procedural tự phục hồi.
+        /// </summary>
+        private sealed class WeightedVrmaProxy : IVrm10Animation
+        {
+            private static readonly IReadOnlyDictionary<ExpressionKey, Func<float>> Empty =
+                new Dictionary<ExpressionKey, Func<float>>();
+
+            private readonly Vrm10AnimationInstance _clip;
+            public float Weight;
+
+            public WeightedVrmaProxy(Vrm10AnimationInstance clip) => _clip = clip;
+
+            public (INormalizedPoseProvider, ITPoseProvider) ControlRig => _clip.ControlRig;
+            public IReadOnlyDictionary<ExpressionKey, Func<float>> ExpressionMap =>
+                Weight > 0.01f ? _clip.ExpressionMap : Empty;
+            public LookAtInput? LookAt => null;
+            public void ShowBoxMan(bool enable) { if (_clip.BoxMan != null) _clip.BoxMan.enabled = false; }
+            public void Dispose() { } // Controller sở hữu instance clip; không destroy ở đây.
         }
 
         private void Awake()
@@ -57,6 +91,7 @@ namespace Mikudayo.Avatar
             if (_instance == null || string.IsNullOrEmpty(name)) return;
             Detach();
             if (_routine != null) StopCoroutine(_routine);
+            _finishedQueued = false;
             _routine = StartCoroutine(PlayRoutine(name));
         }
 
@@ -67,7 +102,8 @@ namespace Mikudayo.Avatar
                 StopCoroutine(_routine);
                 _routine = null;
             }
-            Detach();
+            if (!_playing && _proxy == null) return;
+            _routine = StartCoroutine(StopRoutine());
         }
 
         private IEnumerator PlayRoutine(string name)
@@ -104,11 +140,54 @@ namespace Mikudayo.Avatar
                 yield break;
             }
 
-            while (_playing)
+            var fadeUp = 0f;
+            while (fadeUp < 1f && _playing && clip.Animation != null && clip.Animation.isPlaying)
+            {
+                fadeUp = Mathf.MoveTowards(fadeUp, 1f, Time.deltaTime / fadeSeconds);
+                _proxy.Weight = fadeUp;
+                yield return null;
+            }
+            while (_playing && clip.Animation != null && clip.Animation.isPlaying)
             {
                 yield return null;
             }
+            // A later Play() may have taken over this routine mid-fade; the
+            // new routine owns the fade-out/detach/callback in that case.
+            if (!_playing || _current != clip)
+            {
+                _routine = null;
+                yield break;
+            }
+            yield return FadeOutRoutine();
+            Detach();
             _routine = null;
+            QueueFinished();
+        }
+
+        private IEnumerator FadeOutRoutine()
+        {
+            if (_proxy == null) yield break;
+            var fadeDown = _proxy.Weight;
+            while (fadeDown > 0f)
+            {
+                fadeDown = Mathf.MoveTowards(fadeDown, 0f, Time.deltaTime / (fadeSeconds * 0.5f));
+                _proxy.Weight = fadeDown;
+                yield return null;
+            }
+        }
+
+        private IEnumerator StopRoutine()
+        {
+            yield return FadeOutRoutine();
+            Detach();
+            QueueFinished();
+        }
+
+        private void QueueFinished()
+        {
+            if (_finishedQueued) return;
+            _finishedQueued = true;
+            OnFinished?.Invoke();
         }
 
         private LoadedClip LoadClip(string name)
@@ -162,9 +241,11 @@ namespace Mikudayo.Avatar
             {
                 clip.Animation.Play();
             }
-            _instance.Runtime.VrmAnimation = clip.Clip;
+            _proxy = new WeightedVrmaProxy(clip.Clip);
+            _instance.Runtime.VrmAnimation = _proxy;
             _playing = true;
             _attachPending = false;
+            _finishedQueued = false;
             return true;
         }
 
@@ -172,14 +253,31 @@ namespace Mikudayo.Avatar
         {
             _attachPending = false;
             _playing = false;
-            if (_current == null) return;
+            var wasAttached = _current != null;
+            if (_current == null)
+            {
+                _proxy = null;
+                return;
+            }
+            // WeightedVrmaProxy is a plain C# class (IVrm10Animation only
+            // derives from IDisposable), so compare by reference, not via a
+            // UnityEngine.Object cast.
             if (_instance != null &&
-                (UnityEngine.Object)_instance.Runtime.VrmAnimation == _current.Clip)
+                ReferenceEquals(_instance.Runtime.VrmAnimation, _proxy))
             {
                 _instance.Runtime.VrmAnimation = null;
             }
             if (_current.Animation != null) _current.Animation.Stop();
             _current = null;
+            _proxy = null;
+            // Safety net: if a gesture was cut short outside a routine (scene
+            // teardown, Stop before a routine was running) the coroutine
+            // callback never fires, so deliver OnFinished here instead.
+            if (wasAttached && !_finishedQueued)
+            {
+                _finishedQueued = true;
+                OnFinished?.Invoke();
+            }
         }
 
         private void LateUpdate()

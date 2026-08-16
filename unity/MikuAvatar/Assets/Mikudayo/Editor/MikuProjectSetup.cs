@@ -56,23 +56,7 @@ namespace Mikudayo.Avatar.Editor
             var gestureController = avatar.AddComponent<MikuGestureController>();
             gestureController.AvatarRoot = avatar;
 
-            // VRMA retargeting needs Vrm10RuntimeControlRig. In UniVRM
-            // 0.127.2 m_useControlRig is a private non-serialized field with
-            // no public setter, so SerializedObject cannot flip it; the
-            // actual rig is built by MikuGestureController on demand at
-            // runtime. The write below documents the intent and becomes a
-            // real no-op toggle should the field ever be serialized.
-            var vrmInstance = avatar.GetComponent<UniVRM10.Vrm10Instance>();
-            if (vrmInstance != null)
-            {
-                var serialized = new UnityEditor.SerializedObject(vrmInstance);
-                var useControlRig = serialized.FindProperty("m_useControlRig");
-                if (useControlRig != null && !useControlRig.boolValue)
-                {
-                    useControlRig.boolValue = true;
-                    serialized.ApplyModifiedPropertiesWithoutUndo();
-                }
-            }
+            // VRMA control rig is built at runtime by MikuGestureController.EnsureControlRig().
 
             var bridgeObject = new GameObject("MikuAvatarBridge");
             var audioSource = bridgeObject.AddComponent<AudioSource>();
@@ -97,6 +81,8 @@ namespace Mikudayo.Avatar.Editor
             demo.Bridge = bridge;
             var smokeCapture = bridgeObject.AddComponent<MikuAvatarSmokeCapture>();
             smokeCapture.Bridge = bridge;
+            var gestureHarness = bridgeObject.AddComponent<MikuGestureDemoHarness>();
+            gestureHarness.Bridge = bridge;
 
             // Keep explicit references alive and make setup intent obvious.
             EditorUtility.SetDirty(blink);
@@ -126,6 +112,8 @@ namespace Mikudayo.Avatar.Editor
             if (demo != null) Object.DestroyImmediate(demo);
             var capture = Object.FindFirstObjectByType<MikuAvatarSmokeCapture>();
             if (capture != null) Object.DestroyImmediate(capture);
+            var gestureHarness = Object.FindFirstObjectByType<MikuGestureDemoHarness>();
+            if (gestureHarness != null) Object.DestroyImmediate(gestureHarness);
             var overlay = GameObject.Find("Smoke Test UI");
             if (overlay != null) Object.DestroyImmediate(overlay);
 

@@ -18,15 +18,31 @@ namespace Mikudayo.Avatar
             public string emotion;
         }
 
+        [Serializable]
+        private sealed class GesturePayload
+        {
+            public string gesture;
+        }
+
         public ModelController ModelController;
         public Vrm10MouthCueDriver MouthDriver;
-
-        // TEMP (gesture spike): replaced by the Task 2 command API.
         public MikuGestureController GestureController;
 
-        public void TestGesture(string name)
+        public void PlayGesture(string message)
         {
-            GestureController?.Play(name.Trim());
+            var gesture = ParseGesture(message);
+            if (GestureController == null)
+            {
+                Debug.LogWarning("MikuAvatar: GestureController is not ready");
+                return;
+            }
+            GestureController.Play(gesture);
+            Debug.Log($"MikuAvatar: gesture={gesture}");
+        }
+
+        public void StopGesture(string _ = "")
+        {
+            GestureController?.Stop();
         }
 
         private void Awake()
@@ -90,6 +106,21 @@ namespace Mikudayo.Avatar
             catch
             {
                 return "neutral";
+            }
+        }
+
+        private static string ParseGesture(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return "";
+            var trimmed = message.Trim();
+            if (!trimmed.StartsWith("{")) return trimmed;
+            try
+            {
+                return JsonUtility.FromJson<GesturePayload>(trimmed)?.gesture ?? "";
+            }
+            catch
+            {
+                return "";
             }
         }
     }
