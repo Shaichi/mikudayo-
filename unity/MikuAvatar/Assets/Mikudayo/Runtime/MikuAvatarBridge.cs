@@ -27,6 +27,7 @@ namespace Mikudayo.Avatar
         public ModelController ModelController;
         public Vrm10MouthCueDriver MouthDriver;
         public MikuGestureController GestureController;
+        public MikuIdlePool IdlePool;
 
         public void PlayGesture(string message)
         {
@@ -36,6 +37,7 @@ namespace Mikudayo.Avatar
                 Debug.LogWarning("MikuAvatar: GestureController is not ready");
                 return;
             }
+            IdlePool?.Freeze();
             GestureController.Play(gesture);
             Debug.Log($"MikuAvatar: gesture={gesture}");
         }
@@ -43,12 +45,17 @@ namespace Mikudayo.Avatar
         public void StopGesture(string _ = "")
         {
             GestureController?.Stop();
+            IdlePool?.Release();
         }
 
         private void Awake()
         {
             if (ModelController == null) ModelController = GetComponent<ModelController>();
             if (MouthDriver == null) MouthDriver = GetComponent<Vrm10MouthCueDriver>();
+            if (GestureController != null && IdlePool != null)
+            {
+                GestureController.OnFinished = () => IdlePool.Release();
+            }
             gameObject.name = "MikuAvatarBridge";
         }
 

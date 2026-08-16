@@ -41,7 +41,7 @@ namespace Mikudayo.Avatar
         private bool _playing;
         private bool _attachPending;
         private bool _controlRigChecked;
-        private bool _finishedQueued;
+        private bool _finishedDelivered;
 
         private sealed class LoadedClip
         {
@@ -91,7 +91,7 @@ namespace Mikudayo.Avatar
             if (_instance == null || string.IsNullOrEmpty(name)) return;
             Detach();
             if (_routine != null) StopCoroutine(_routine);
-            _finishedQueued = false;
+            _finishedDelivered = false;
             _routine = StartCoroutine(PlayRoutine(name));
         }
 
@@ -181,12 +181,13 @@ namespace Mikudayo.Avatar
             yield return FadeOutRoutine();
             Detach();
             QueueFinished();
+            _routine = null;
         }
 
         private void QueueFinished()
         {
-            if (_finishedQueued) return;
-            _finishedQueued = true;
+            if (_finishedDelivered) return;
+            _finishedDelivered = true;
             OnFinished?.Invoke();
         }
 
@@ -245,7 +246,7 @@ namespace Mikudayo.Avatar
             _instance.Runtime.VrmAnimation = _proxy;
             _playing = true;
             _attachPending = false;
-            _finishedQueued = false;
+            _finishedDelivered = false;
             return true;
         }
 
@@ -270,12 +271,15 @@ namespace Mikudayo.Avatar
             if (_current.Animation != null) _current.Animation.Stop();
             _current = null;
             _proxy = null;
-            // Safety net: if a gesture was cut short outside a routine (scene
-            // teardown, Stop before a routine was running) the coroutine
-            // callback never fires, so deliver OnFinished here instead.
-            if (wasAttached && !_finishedQueued)
+            // Safety net: Detach can also run outside a finishing routine —
+            // a new Play() detaches the previous gesture before starting its
+            // own, and LateUpdate detaches defensively when the clip, its
+            // Animation component, or the control rig disappears. In those
+            // paths the coroutine callback never fires, so deliver OnFinished
+            // here instead.
+            if (wasAttached && !_finishedDelivered)
             {
-                _finishedQueued = true;
+                _finishedDelivered = true;
                 OnFinished?.Invoke();
             }
         }

@@ -56,6 +56,9 @@ namespace Mikudayo.Avatar.Editor
             var gestureController = avatar.AddComponent<MikuGestureController>();
             gestureController.AvatarRoot = avatar;
 
+            var idlePool = avatar.AddComponent<MikuIdlePool>();
+            idlePool.Animator = animator;
+
             // VRMA control rig is built at runtime by MikuGestureController.EnsureControlRig().
 
             var bridgeObject = new GameObject("MikuAvatarBridge");
@@ -77,6 +80,7 @@ namespace Mikudayo.Avatar.Editor
             bridge.ModelController = modelController;
             bridge.MouthDriver = mouth;
             bridge.GestureController = gestureController;
+            bridge.IdlePool = idlePool;
             var demo = bridgeObject.AddComponent<MikuAvatarAutoDemo>();
             demo.Bridge = bridge;
             var smokeCapture = bridgeObject.AddComponent<MikuAvatarSmokeCapture>();
