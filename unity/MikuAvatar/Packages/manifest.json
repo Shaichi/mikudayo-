@@ -1,13 +1,13 @@
 {
   "dependencies": {
-    "com.learntoflutter.flutter_embed_unity_6000_0": "https://github.com/learntoflutter/flutter_embed_unity.git?path=example_unity_6000_0_project/Assets/FlutterEmbed#v2.0.0",
     "com.cysharp.unitask": "https://github.com/Cysharp/UniTask.git?path=src/UniTask/Assets/Plugins/UniTask#2.5.4",
     "com.hecomi.ulipsync": "https://github.com/hecomi/uLipSync.git?path=/Assets/uLipSync#v3.1.0",
-    "com.unity.burst": "1.8.24",
+    "com.learntoflutter.flutter_embed_unity_6000_0": "https://github.com/learntoflutter/flutter_embed_unity.git?path=example_unity_6000_0_project/Assets/FlutterEmbed#v2.0.0",
+    "com.unity.burst": "1.8.30",
     "com.unity.nuget.newtonsoft-json": "3.2.1",
+    "com.unity.render-pipelines.universal": "17.3.0",
     "com.unity.test-framework": "1.6.0",
     "com.unity.timeline": "1.8.10",
-    "com.unity.render-pipelines.universal": "17.3.0",
     "com.unity.ugui": "2.0.0",
     "com.vrmc.gltf": "https://github.com/vrm-c/UniVRM.git?path=/Assets/UniGLTF#v0.127.2",
     "com.vrmc.vrm": "https://github.com/vrm-c/UniVRM.git?path=/Assets/VRM10#v0.127.2",

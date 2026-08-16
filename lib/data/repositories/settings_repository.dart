@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Lưu cục bộ bằng shared_preferences; gửi kèm mỗi lượt hội thoại.
 class AppSettings {
   const AppSettings({
-    this.serverUrl = 'http://127.0.0.1:8000',
+    this.serverUrl = 'https://mikudayo.onrender.com',
     this.mode = 'free_talk',
     this.jlptLevel = 'N5',
     this.scenario = '',
@@ -40,7 +40,7 @@ class AppSettings {
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
-        serverUrl: (json['serverUrl'] as String?) ?? 'http://127.0.0.1:8000',
+        serverUrl: (json['serverUrl'] as String?) ?? 'https://mikudayo.onrender.com',
         mode: (json['mode'] as String?) ?? 'free_talk',
         jlptLevel: (json['jlptLevel'] as String?) ?? 'N5',
         scenario: (json['scenario'] as String?) ?? '',

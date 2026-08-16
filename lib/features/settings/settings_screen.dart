@@ -49,7 +49,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _save() async {
     var url = _serverCtrl.text.trim().replaceAll(RegExp(r'/$'), '');
-    if (url.isEmpty) url = 'http://127.0.0.1:8000';
+    if (url.isEmpty) url = 'https://mikudayo.onrender.com';
     final notifier = ref.read(appSettingsProvider.notifier);
     await notifier.update(AppSettings(
       serverUrl: url,
@@ -78,7 +78,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             controller: _serverCtrl,
             keyboardType: TextInputType.url,
             decoration: const InputDecoration(
-              hintText: 'http://127.0.0.1:8000',
+              hintText: 'https://mikudayo.onrender.com',
               labelText: 'Địa chỉ backend',
               prefixIcon: Icon(Icons.dns_outlined),
             ),

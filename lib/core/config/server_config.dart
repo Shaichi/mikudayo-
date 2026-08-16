@@ -6,11 +6,11 @@
 class ServerConfig {
   ServerConfig._();
 
-  static const String defaultBaseUrl = 'http://127.0.0.1:8000';
+  static const String defaultBaseUrl = 'https://mikudayo.onrender.com';
 
-  /// Timeout cho mỗi request.
-  static const Duration requestTimeout = Duration(seconds: 30);
+  /// Timeout cho mỗi request (để 60s phòng khi Render cần thức dậy từ sleep).
+  static const Duration requestTimeout = Duration(seconds: 60);
 
   /// Fish Audio chạy online ở background sau khi text Gemini đã sẵn sàng.
-  static const Duration audioGenerationTimeout = Duration(seconds: 45);
+  static const Duration audioGenerationTimeout = Duration(seconds: 60);
 }
