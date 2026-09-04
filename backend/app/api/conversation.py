@@ -146,6 +146,17 @@ async def get_audio_status(turn_id: str) -> AudioGenerationStatus:
         )
     if turn is None:
         raise HTTPException(404, "Lượt hội thoại không tồn tại")
+
+    created_str = turn.get("created_at")
+    if created_str:
+        try:
+            from datetime import datetime, timezone
+            created_dt = datetime.fromisoformat(created_str)
+            if (datetime.now(timezone.utc) - created_dt).total_seconds() > settings.AUDIO_STALE_SECONDS:
+                return AudioGenerationStatus(status="error", error="audio_expired")
+        except Exception:
+            pass
+
     return AudioGenerationStatus()
 
 
@@ -281,18 +292,41 @@ async def conversation_turn(
 
     # Store the exact transcript sent by the learner; model output is not an
     # authoritative speech-to-text source.
-    turn_id = conv_repo.add_turn_with_vocabulary(
-        session_id=sid,
-        transcript_ja=user_text,
-        reply_ja=out.reply_ja,
-        correction_ja=out.correction_ja,
-        explanation_vi=out.explanation_vi,
-        emotion=out.emotion,
-        gesture=out.gesture,
-        difficulty=out.difficulty,
-        vocabulary=[item.model_dump() for item in out.vocabulary],
-        client_request_id=client_request_id or None,
-    )
+    import sqlite3
+    try:
+        turn_id = conv_repo.add_turn_with_vocabulary(
+            session_id=sid,
+            transcript_ja=user_text,
+            reply_ja=out.reply_ja,
+            correction_ja=out.correction_ja,
+            explanation_vi=out.explanation_vi,
+            emotion=out.emotion,
+            gesture=out.gesture,
+            difficulty=out.difficulty,
+            vocabulary=[item.model_dump() for item in out.vocabulary],
+            client_request_id=client_request_id or None,
+        )
+    except sqlite3.IntegrityError:
+        if client_request_id:
+            existing = conv_repo.get_turn_by_request_id(client_request_id)
+            if existing:
+                vocabulary = conv_repo.get_turn_vocabulary(existing["id"])
+                return ConversationResult(
+                    turn_id=existing["id"],
+                    session_id=existing["session_id"],
+                    transcript_ja=existing.get("transcript_ja") or user_text,
+                    reply_ja=existing["reply_ja"],
+                    correction_ja=existing.get("correction_ja"),
+                    explanation_vi=existing.get("explanation_vi"),
+                    emotion=existing.get("emotion", "neutral"),
+                    gesture=existing.get("gesture", "none"),
+                    vocabulary=vocabulary,
+                    audio_url="",
+                    voice_mode="pending" if not existing.get("audio_path") else "fish_audio",
+                    mouth_cues=[],
+                    timing_ms={"idempotent": True, "race_resolved": True},
+                )
+        raise
 
     _write_audio_status(turn_id, AudioGenerationStatus())
     background_tasks.add_task(

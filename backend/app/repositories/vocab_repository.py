@@ -18,17 +18,18 @@ def upsert_vocab(item: VocabItem) -> int:
             conn.execute(
                 """UPDATE vocabulary
                    SET review_count = review_count + 1,
+                       last_seen_at = ?,
                        reading=COALESCE(NULLIF(?, ''), reading),
                        meaning_vi=COALESCE(NULLIF(?, ''), meaning_vi)
                    WHERE id=?""",
-                (item.reading, item.meaning_vi, row["id"]),
+                (now, item.reading, item.meaning_vi, row["id"]),
             )
             return row["id"]
         cur = conn.execute(
             """INSERT INTO vocabulary
-               (word, reading, meaning_vi, first_seen_at, review_count)
-               VALUES (?,?,?,?,1)""",
-            (item.word, item.reading, item.meaning_vi, now),
+               (word, reading, meaning_vi, first_seen_at, last_seen_at, review_count)
+               VALUES (?,?,?,?,?,1)""",
+            (item.word, item.reading, item.meaning_vi, now, now),
         )
         return int(cur.lastrowid)
 
@@ -68,7 +69,7 @@ def get_reinforcement_candidates(
         "N4": ("N5", "N4"),
         "N3": ("N5", "N4", "N3"),
     }
-    allowed_levels = levels_map.get(level.upper(), ("N5",))
+    allowed_levels = levels_map.get((level or "N5").upper().strip(), ("N5",))
     placeholders = ",".join("?" for _ in allowed_levels)
     limit = max(1, min(limit, 20))
 

@@ -37,16 +37,20 @@ def add_chunk(
         chunk_id = int(cur.lastrowid)
 
         if embedding and is_vec_available():
-            try:
-                import sqlite_vec
+            import math
+            if any(math.isnan(x) or math.isinf(x) for x in embedding) or not any(x != 0.0 for x in embedding):
+                logger.warning("Bỏ qua lưu vector không hợp lệ (zero hoặc NaN/Inf) cho chunk %d", chunk_id)
+            else:
+                try:
+                    import sqlite_vec
 
-                vec_bytes = sqlite_vec.serialize_float32(embedding)
-                conn.execute(
-                    "INSERT INTO vec_grammar_chunks (chunk_id, embedding) VALUES (?, ?)",
-                    (chunk_id, vec_bytes),
-                )
-            except Exception as exc:
-                logger.warning("Không thể lưu vector cho chunk %d: %s", chunk_id, exc)
+                    vec_bytes = sqlite_vec.serialize_float32(embedding)
+                    conn.execute(
+                        "INSERT INTO vec_grammar_chunks (chunk_id, embedding) VALUES (?, ?)",
+                        (chunk_id, vec_bytes),
+                    )
+                except Exception as exc:
+                    logger.warning("Không thể lưu vector cho chunk %d: %s", chunk_id, exc)
 
     return chunk_id
 
@@ -76,12 +80,17 @@ def search_knn(
     if not is_vec_available() or not query_vector:
         return []
 
+    import math
+    if any(math.isnan(x) or math.isinf(x) for x in query_vector) or not any(x != 0.0 for x in query_vector):
+        return []
+
     try:
         import sqlite_vec
     except ImportError:
         return []
 
-    allowed_levels = _LEVEL_ORDER.get(level.upper().strip(), ("N5", "N4", "N3"))
+    normalized_level = (level or "N5").upper().strip()
+    allowed_levels = _LEVEL_ORDER.get(normalized_level, ("N5", "N4", "N3"))
     limit = max(1, min(limit, 10))
 
     try:
@@ -90,8 +99,8 @@ def search_knn(
         logger.error("Lỗi serialize query vector: %s", exc)
         return []
 
-    # Quét top-k từ bảng ảo vec0 (lấy dư một chút để lọc sau theo jlpt_level)
-    fetch_k = min(limit * 3, 20)
+    # Quét top-k từ bảng ảo vec0 (quét tối thiểu 50 để tránh hiện tượng starvation)
+    fetch_k = min(max(50, limit * 5), 100)
 
     with get_conn() as conn:
         try:
@@ -111,7 +120,12 @@ def search_knn(
 
     results = []
     for r in rows:
-        distance = float(r["distance"])
+        if r["distance"] is None:
+            continue
+        try:
+            distance = float(r["distance"])
+        except (TypeError, ValueError):
+            continue
         # Với cosine distance trong sqlite-vec: distance in [0, 2].
         # similarity = 1 - distance. Khi hoàn toàn giống nhau: distance=0 -> similarity=1.0.
         similarity = max(0.0, 1.0 - distance)
@@ -131,3 +145,4 @@ def search_knn(
                 break
 
     return results
+

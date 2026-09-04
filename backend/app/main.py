@@ -17,8 +17,10 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .api import conversation, health, history
 from .core.config import settings
-from .core.logging import setup_logging
+from .core.logging import setup_logging, get_logger
 from .db.sqlite import init_db
+
+logger = get_logger("main")
 
 
 @asynccontextmanager

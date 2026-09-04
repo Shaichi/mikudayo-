@@ -112,10 +112,13 @@ def add_turn_with_vocabulary(
             (tid, session_id, transcript_ja, reply_ja, correction_ja,
              explanation_vi, emotion, gesture, difficulty, client_request_id, now),
         )
+        seen_words = set()
         for item in vocabulary:
             word = str(item.get("word", "")).strip()
-            if not word:
+            if not word or word in seen_words:
                 continue
+            seen_words.add(word)
+
             row = conn.execute(
                 "SELECT id FROM vocabulary WHERE word=? ORDER BY id LIMIT 1",
                 (word,),
@@ -125,17 +128,19 @@ def add_turn_with_vocabulary(
                 conn.execute(
                     """UPDATE vocabulary
                        SET review_count=review_count + 1,
+                           last_seen_at=?,
                            reading=COALESCE(NULLIF(?, ''), reading),
                            meaning_vi=COALESCE(NULLIF(?, ''), meaning_vi)
                        WHERE id=?""",
-                    (str(item.get("reading", "")), str(item.get("meaning_vi", "")), vocab_id),
+                    (now, str(item.get("reading", "")), str(item.get("meaning_vi", "")), vocab_id),
                 )
             else:
+                level_str = (difficulty or "N5").upper().strip()
                 cur = conn.execute(
                     """INSERT INTO vocabulary
-                       (word, reading, meaning_vi, first_seen_at, review_count)
-                       VALUES (?,?,?,?,1)""",
-                    (word, item.get("reading") or "", item.get("meaning_vi") or "", now),
+                       (word, reading, meaning_vi, jlpt_level, first_seen_at, last_seen_at, review_count)
+                       VALUES (?,?,?,?,?,?,1)""",
+                    (word, item.get("reading") or "", item.get("meaning_vi") or "", level_str, now, now),
                 )
                 vocab_id = int(cur.lastrowid)
             conn.execute(

@@ -60,6 +60,7 @@ def compute_mouth_cues(wav_bytes: bytes, window_ms: int = 50) -> list[MouthCue]:
     if not samples or rate <= 0:
         return []
 
+    window_ms = max(10, min(window_ms, 500))
     window = max(1, int(rate * window_ms / 1000))
     step = window  # không overlap: mỗi window một cue.
 
