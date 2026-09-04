@@ -33,6 +33,11 @@ async def lifespan(app: FastAPI):
         seed_grammar()
     except Exception as exc:
         logger.warning("Không seed được grammar: %s", exc)
+    try:
+        from .db.seed_vocab import seed_vocab
+        seed_vocab()
+    except Exception as exc:
+        logger.warning("Không seed được vocab: %s", exc)
     conversation.cleanup_temp_audio()
     await conversation.recover_audio_jobs()
     try:
