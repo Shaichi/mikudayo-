@@ -27,24 +27,29 @@ namespace Mikudayo.Avatar
         public ModelController ModelController;
         public Vrm10MouthCueDriver MouthDriver;
         public MikuGestureController GestureController;
+        public MikuNaturalGestureController NaturalGestureController;
         public MikuIdlePool IdlePool;
 
         public void PlayGesture(string message)
         {
             var gesture = ParseGesture(message);
-            if (GestureController == null)
+            if (NaturalGestureController == null)
             {
-                Debug.LogWarning("MikuAvatar: GestureController is not ready");
+                Debug.LogWarning("MikuAvatar: natural gesture controller is not ready");
                 return;
             }
+            NaturalGestureController.Play(gesture);
+            // Play() may detach a previous gesture and invoke OnFinished.
+            // Freeze after Play so that callback cannot immediately unfreeze
+            // the new gesture's idle state.
             IdlePool?.Freeze();
-            GestureController.Play(gesture);
             Debug.Log($"MikuAvatar: gesture={gesture}");
         }
 
         public void StopGesture(string _ = "")
         {
-            GestureController?.Stop();
+            if (NaturalGestureController != null) NaturalGestureController.Stop();
+            else GestureController?.Stop();
             IdlePool?.Release();
         }
 
@@ -52,7 +57,22 @@ namespace Mikudayo.Avatar
         {
             if (ModelController == null) ModelController = GetComponent<ModelController>();
             if (MouthDriver == null) MouthDriver = GetComponent<Vrm10MouthCueDriver>();
-            if (GestureController != null && IdlePool != null)
+            if (NaturalGestureController == null)
+            {
+                var avatarRoot = GestureController != null && GestureController.AvatarRoot != null
+                    ? GestureController.AvatarRoot
+                    : gameObject;
+                NaturalGestureController = avatarRoot.GetComponent<MikuNaturalGestureController>();
+                if (NaturalGestureController == null)
+                {
+                    NaturalGestureController = avatarRoot.AddComponent<MikuNaturalGestureController>();
+                }
+            }
+            if (NaturalGestureController != null && IdlePool != null)
+            {
+                NaturalGestureController.OnFinished = () => IdlePool.Release();
+            }
+            else if (GestureController != null && IdlePool != null)
             {
                 GestureController.OnFinished = () => IdlePool.Release();
             }

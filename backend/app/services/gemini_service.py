@@ -150,7 +150,9 @@ def _mock_output(user_text: str, mode: Mode, level: JpLevel) -> GeminiTurnOutput
 class GeminiService:
     def __init__(self) -> None:
         self._client: Optional[object] = None
-        self._mock = not bool(settings.GEMINI_API_KEY)
+        if not settings.GEMINI_API_KEY and not settings.ALLOW_MOCK:
+            raise RuntimeError("GEMINI_API_KEY chưa được cấu hình và ALLOW_MOCK=false.")
+        self._mock = settings.ALLOW_MOCK and not bool(settings.GEMINI_API_KEY)
         if not self._mock:
             try:
                 from google import genai
@@ -160,8 +162,14 @@ class GeminiService:
                 self._types = types
                 logger.info("Gemini client ready (model=%s)", settings.GEMINI_MODEL)
             except Exception as exc:  # pragma: no cover
-                logger.warning("Không khởi tạo được Gemini client: %s — dùng mock.", exc)
-                self._mock = True
+                if settings.ALLOW_MOCK:
+                    logger.warning("Không khởi tạo được Gemini client — dùng mock development mode.")
+                    self._mock = True
+                else:
+                    raise RuntimeError("Không khởi tạo được Gemini client.") from exc
+
+        if not self._mock and self._client is None:
+            raise RuntimeError("GEMINI_API_KEY chưa được cấu hình.")
 
     @property
     def is_mock(self) -> bool:
@@ -226,8 +234,10 @@ class GeminiService:
                 contents=contents,
                 config=gen_config,
             )
-            raw = response.text
-            logger.debug("Gemini raw output: %s", raw[:500])
+            raw = response.text or ""
+            if not raw.strip():
+                raise RuntimeError("Gemini trả về nội dung rỗng.")
+            logger.debug("Gemini trả về structured response (%d ký tự).", len(raw))
             # Chuẩn hóa: loại bỏ markdown code fence nếu có
             cleaned = raw.strip()
             if cleaned.startswith("```"):

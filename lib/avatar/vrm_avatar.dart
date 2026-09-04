@@ -36,6 +36,9 @@ class _VrmAvatarState extends ConsumerState<VrmAvatar> {
   final AssetHttpServer _httpServer = AssetHttpServer();
   late final WebViewController _controller;
   bool _disposed = false;
+  bool _webViewReady = false;
+  bool _modelLoaded = false;
+  String? _loadError;
   int _speechSeq = 0;
 
   /// Map cảm xúc Miku → preset VRM (khớp `applyEmotion` trong bundle).
@@ -84,9 +87,11 @@ class _VrmAvatarState extends ConsumerState<VrmAvatar> {
           },
         )
         ..loadRequest(Uri.parse(_httpServer.baseUrl));
+      _webViewReady = true;
       _controllerCompleter.complete();
     } catch (e) {
       debugPrint('VrmAvatar init failed: $e');
+      _loadError = 'Không khởi tạo được trình hiển thị avatar.';
       _controllerCompleter.complete();
     }
     if (!mounted) return;
@@ -103,16 +108,29 @@ class _VrmAvatarState extends ConsumerState<VrmAvatar> {
           _lastEmotion = null;
           final cur = ref.read(avatarControllerProvider);
           _lastEmotion = cur.emotion;
+          _modelLoaded = true;
+          _loadError = null;
           _setExpression(cur.emotion);
           debugPrint('VrmAvatar: model loaded, emotion=${cur.emotion}');
           if (mounted) setState(() {});
         } else if (data['type'] == 'error') {
           debugPrint('WEB error: ${data['message']}');
+          _loadError = 'Không tải được mô hình Miku.';
+          if (mounted) setState(() {});
         }
       }
     } catch (e) {
       debugPrint('VrmAvatar bad web message: $e');
     }
+  }
+
+  Future<void> _retryLoad() async {
+    if (!_webViewReady) return;
+    setState(() {
+      _modelLoaded = false;
+      _loadError = null;
+    });
+    await _controller.reload();
   }
 
   /// Gửi JSON lên JS qua window.onFlutterMessage. Bỏ qua khi web chưa load xong.
@@ -155,14 +173,65 @@ class _VrmAvatarState extends ConsumerState<VrmAvatar> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_controllerCompleter.isCompleted) {
-      // Đang khởi tạo webview — placeholder trống, không flash emoji cũ.
-      return const SizedBox.shrink();
-    }
     return SizedBox(
       width: widget.width,
       height: widget.height,
-      child: WebViewWidget(controller: _controller),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (_controllerCompleter.isCompleted && _webViewReady)
+            WebViewWidget(controller: _controller),
+          if (!_modelLoaded)
+            ColoredBox(
+              color: const Color(0xFF03080D).withValues(alpha: 0.72),
+              child: Center(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 32),
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF102126).withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_loadError == null)
+                        const SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Color(0xFF52F4DE),
+                          ),
+                        )
+                      else
+                        const Icon(
+                          Icons.cloud_off_rounded,
+                          color: Color(0xFFFF8DA6),
+                          size: 30,
+                        ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _loadError ?? 'Đang tải mô hình Miku…',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      if (_loadError != null && _webViewReady) ...[
+                        const SizedBox(height: 10),
+                        TextButton.icon(
+                          onPressed: _retryLoad,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Thử lại'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

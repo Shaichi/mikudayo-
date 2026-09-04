@@ -19,32 +19,53 @@ class AppSettings {
   final String jlptLevel;
   final String scenario;
 
+  String get modeLabel => switch (mode) {
+    'free_talk' => 'Trò chuyện tự do',
+    'correction' => 'Luyện sửa lỗi',
+    'roleplay' => 'Đóng vai tình huống',
+    _ => mode,
+  };
+
+  String get shortModeLabel => switch (mode) {
+    'free_talk' => 'Tự do',
+    'correction' => 'Sửa lỗi',
+    'roleplay' => 'Đóng vai',
+    _ => mode,
+  };
+
+  String get practiceSummary {
+    final context = mode == 'roleplay' && scenario.isNotEmpty
+        ? ' · $scenario'
+        : '';
+    return '$shortModeLabel · $jlptLevel$context';
+  }
+
   AppSettings copyWith({
     String? serverUrl,
     String? mode,
     String? jlptLevel,
     String? scenario,
-  }) =>
-      AppSettings(
-        serverUrl: serverUrl ?? this.serverUrl,
-        mode: mode ?? this.mode,
-        jlptLevel: jlptLevel ?? this.jlptLevel,
-        scenario: scenario ?? this.scenario,
-      );
+  }) => AppSettings(
+    serverUrl: serverUrl ?? this.serverUrl,
+    mode: mode ?? this.mode,
+    jlptLevel: jlptLevel ?? this.jlptLevel,
+    scenario: scenario ?? this.scenario,
+  );
 
   Map<String, dynamic> toJson() => {
-        'serverUrl': serverUrl,
-        'mode': mode,
-        'jlptLevel': jlptLevel,
-        'scenario': scenario,
-      };
+    'serverUrl': serverUrl,
+    'mode': mode,
+    'jlptLevel': jlptLevel,
+    'scenario': scenario,
+  };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
-        serverUrl: (json['serverUrl'] as String?) ?? 'https://mikudayo.onrender.com',
-        mode: (json['mode'] as String?) ?? 'free_talk',
-        jlptLevel: (json['jlptLevel'] as String?) ?? 'N5',
-        scenario: (json['scenario'] as String?) ?? '',
-      );
+    serverUrl:
+        (json['serverUrl'] as String?) ?? 'https://mikudayo.onrender.com',
+    mode: (json['mode'] as String?) ?? 'free_talk',
+    jlptLevel: (json['jlptLevel'] as String?) ?? 'N5',
+    scenario: (json['scenario'] as String?) ?? '',
+  );
 }
 
 /// Repository đọc/ghi cài đặt local.

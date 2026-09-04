@@ -21,11 +21,19 @@ def _build_services():
 def health() -> HealthStatus:
     gemini, fish_audio = _build_services()
     fish_ready = fish_audio.check_health()
+    gemini_ready = gemini.check_health()
+    status = "ok" if gemini_ready and (fish_ready or settings.ALLOW_MOCK) else "degraded"
     return HealthStatus(
-        status="ok",
-        gemini=gemini.check_health(),
+        status=status,
+        gemini=gemini_ready,
         fish_audio=fish_ready,
         mode="mock" if gemini.is_mock or not fish_ready else "live",
         model=settings.GEMINI_MODEL,
         tts_model=settings.FISH_MODEL,
     )
+
+
+@router.get("/health/live")
+def liveness() -> dict[str, str]:
+    """Process liveness probe that does not call external providers."""
+    return {"status": "ok"}

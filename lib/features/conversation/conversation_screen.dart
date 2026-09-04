@@ -6,8 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../avatar/vrm_avatar.dart';
 import '../../avatar/unity_avatar.dart';
+import '../../app/theme.dart';
+import '../../data/models/conversation_turn.dart';
 import '../../data/services/api_service.dart';
 import '../../data/services/audio_service.dart';
+import '../settings/settings_screen.dart';
 import 'conversation_view_model.dart';
 import 'widgets/chat_bubble.dart';
 
@@ -58,6 +61,43 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     );
   }
 
+  Future<void> _startNewSession(ConversationState state) async {
+    if (state.isBusy) return;
+    final hasConversation = state.messages.any(
+      (message) => message.kind != MessageKind.system,
+    );
+    if (hasConversation) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.add_comment_outlined),
+          title: const Text('Bắt đầu phiên mới?'),
+          content: const Text(
+            'Phiên hiện tại vẫn được lưu trong Lịch sử. Miku sẽ bắt đầu lại với ngữ cảnh mới.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Ở lại'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Phiên mới'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    await ref.read(conversationViewModelProvider.notifier).startNewSession();
+  }
+
+  void _openSettings() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(conversationViewModelProvider);
@@ -67,6 +107,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         ? state.activeReply
         : state.messages.where((m) => m.isMiku).lastOrNull?.text ??
               'こんにちは。今日は何を話そうか？';
+    final latestUser = state.messages.where((m) => m.isUser).lastOrNull?.text;
+    final latestResult = state.messages
+        .where((m) => m.isMiku && m.result != null)
+        .lastOrNull
+        ?.result;
 
     return Scaffold(
       backgroundColor: _background,
@@ -102,20 +147,52 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               child: Column(
                 children: [
                   _TopBar(
-                    phase: state.phase,
+                    practiceLabel: settings.practiceSummary,
                     onClose: () => Navigator.maybePop(context),
                     onHistory: () => _showHistory(state),
-                    onRefresh: () => ref
-                        .read(conversationViewModelProvider.notifier)
-                        .addSystemMessage('Phiên trò chuyện mới'),
+                    onRefresh: state.isBusy
+                        ? null
+                        : () => _startNewSession(state),
                   ),
                   const Spacer(),
+                  if (state.phase == ConversationPhase.thinking &&
+                      latestUser != null) ...[
+                    _UserEcho(text: latestUser),
+                    const SizedBox(height: 10),
+                  ],
                   _StatusPill(
                     phase: state.phase,
                     recordingSeconds: state.recordingSeconds,
                   ),
                   const SizedBox(height: 12),
-                  _SubtitleCard(text: latestMiku, phase: state.phase),
+                  if (state.phase == ConversationPhase.error)
+                    _ConversationError(
+                      message:
+                          state.errorMessage ?? 'Đã có lỗi. Vui lòng thử lại.',
+                      onDismiss: () => ref
+                          .read(conversationViewModelProvider.notifier)
+                          .clearError(),
+                      onKeyboard: () {
+                        ref
+                            .read(conversationViewModelProvider.notifier)
+                            .clearError();
+                        _openComposer();
+                      },
+                      onSettings: _openSettings,
+                    )
+                  else
+                    _SubtitleCard(text: latestMiku),
+                  if (state.phase == ConversationPhase.idle &&
+                      latestResult != null &&
+                      (latestResult.correctionJa?.isNotEmpty == true ||
+                          latestResult.explanationVi?.isNotEmpty == true ||
+                          latestResult.vocabulary.isNotEmpty)) ...[
+                    const SizedBox(height: 10),
+                    _LearningPeek(
+                      result: latestResult,
+                      onTap: () => _showHistory(state),
+                    ),
+                  ],
                   const SizedBox(height: 18),
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 220),
@@ -133,7 +210,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                               controller: _textController,
                               focusNode: _textFocus,
                               enabled: !state.isBusy,
-                              hint: '${settings.mode} · ${settings.jlptLevel}',
+                              hint: settings.practiceSummary,
                               onSend: _sendText,
                               onClose: () {
                                 _textFocus.unfocus();
@@ -206,27 +283,31 @@ class _StageGradient extends StatelessWidget {
 
 class _TopBar extends StatelessWidget {
   const _TopBar({
-    required this.phase,
+    required this.practiceLabel,
     required this.onClose,
     required this.onHistory,
     required this.onRefresh,
   });
 
-  final ConversationPhase phase;
+  final String practiceLabel;
   final VoidCallback onClose;
   final VoidCallback onHistory;
-  final VoidCallback onRefresh;
+  final VoidCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) => Row(
     children: [
-      _GlassButton(icon: Icons.close_rounded, onTap: onClose),
+      _GlassButton(
+        icon: Icons.close_rounded,
+        tooltip: 'Đóng buổi luyện',
+        onTap: onClose,
+      ),
       const SizedBox(width: 12),
-      const Expanded(
+      Expanded(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            const Text(
               'MIKU',
               style: TextStyle(
                 color: Colors.white,
@@ -235,22 +316,69 @@ class _TopBar extends StatelessWidget {
                 letterSpacing: 2.4,
               ),
             ),
-            SizedBox(height: 2),
+            const SizedBox(height: 2),
             Text(
-              'YOUR JAPANESE COMPANION',
-              style: TextStyle(
-                color: Color(0xFF87A9AD),
-                fontSize: 9,
-                letterSpacing: 1.5,
+              practiceLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF9BB9BB),
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.3,
               ),
             ),
           ],
         ),
       ),
-      _GlassButton(icon: Icons.refresh_rounded, onTap: onRefresh),
+      _GlassButton(
+        icon: Icons.add_comment_outlined,
+        tooltip: onRefresh == null
+            ? 'Đang xử lý lượt hiện tại'
+            : 'Bắt đầu phiên mới',
+        onTap: onRefresh,
+      ),
       const SizedBox(width: 8),
-      _GlassButton(icon: Icons.chat_bubble_outline_rounded, onTap: onHistory),
+      _GlassButton(
+        icon: Icons.chat_bubble_outline_rounded,
+        tooltip: 'Xem nội dung trò chuyện',
+        onTap: onHistory,
+      ),
     ],
+  );
+}
+
+class _UserEcho extends StatelessWidget {
+  const _UserEcho({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: 520),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.42),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.person_rounded, size: 16, color: Color(0xFF9BB9BB)),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    ),
   );
 }
 
@@ -320,32 +448,198 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-class _SubtitleCard extends StatelessWidget {
-  const _SubtitleCard({required this.text, required this.phase});
+class _SubtitleCard extends StatefulWidget {
+  const _SubtitleCard({required this.text});
+
   final String text;
-  final ConversationPhase phase;
 
   @override
-  Widget build(BuildContext context) => ConstrainedBox(
-    constraints: const BoxConstraints(maxWidth: 560),
-    child: AnimatedOpacity(
-      duration: const Duration(milliseconds: 200),
-      opacity: text.isEmpty ? 0 : 1,
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 21,
-          height: 1.45,
-          fontWeight: FontWeight.w500,
-          shadows: [Shadow(color: Colors.black, blurRadius: 12)],
+  State<_SubtitleCard> createState() => _SubtitleCardState();
+}
+
+class _SubtitleCardState extends State<_SubtitleCard> {
+  bool _expanded = false;
+
+  @override
+  void didUpdateWidget(covariant _SubtitleCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text) _expanded = false;
+  }
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: _expanded
+        ? 'Thu gọn câu trả lời của Miku'
+        : 'Mở rộng câu trả lời của Miku',
+    child: GestureDetector(
+      onTap: () => setState(() => _expanded = !_expanded),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 200),
+            opacity: widget.text.isEmpty ? 0 : 1,
+            child: Text(
+              widget.text,
+              textAlign: TextAlign.center,
+              maxLines: _expanded ? null : 3,
+              overflow: _expanded
+                  ? TextOverflow.visible
+                  : TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 21,
+                height: 1.45,
+                fontWeight: FontWeight.w500,
+                shadows: [Shadow(color: Colors.black, blurRadius: 12)],
+              ),
+            ),
+          ),
         ),
       ),
     ),
   );
+}
+
+class _ConversationError extends StatelessWidget {
+  const _ConversationError({
+    required this.message,
+    required this.onDismiss,
+    required this.onKeyboard,
+    required this.onSettings,
+  });
+
+  final String message;
+  final VoidCallback onDismiss;
+  final VoidCallback onKeyboard;
+  final VoidCallback onSettings;
+
+  bool get _isConnectionError {
+    final normalized = message.toLowerCase();
+    return normalized.contains('kết nối') ||
+        normalized.contains('máy chủ') ||
+        normalized.contains('network');
+  }
+
+  @override
+  Widget build(BuildContext context) => ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: 560),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF35151E).withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: const Color(0xFFFF668A).withValues(alpha: 0.4),
+            ),
+          ),
+          child: Column(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.error_outline_rounded,
+                    color: Color(0xFFFF8DA6),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      message,
+                      style: const TextStyle(color: Colors.white, height: 1.4),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Đóng thông báo',
+                    onPressed: onDismiss,
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (_isConnectionError)
+                    TextButton(
+                      onPressed: onSettings,
+                      child: const Text('Cài đặt máy chủ'),
+                    ),
+                  const SizedBox(width: 8),
+                  FilledButton.tonalIcon(
+                    onPressed: onKeyboard,
+                    icon: const Icon(Icons.keyboard_rounded),
+                    label: const Text('Nhập lại'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _LearningPeek extends StatelessWidget {
+  const _LearningPeek({required this.result, required this.onTap});
+
+  final ConversationResult result;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = <String>[];
+    if (result.correctionJa?.isNotEmpty == true ||
+        result.explanationVi?.isNotEmpty == true) {
+      parts.add('Có nhận xét');
+    }
+    if (result.vocabulary.isNotEmpty) {
+      parts.add('${result.vocabulary.length} từ mới');
+    }
+    return Material(
+      color: Colors.black.withValues(alpha: 0.46),
+      borderRadius: BorderRadius.circular(99),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(99),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.school_outlined,
+                color: MikuTheme.stageCyan,
+                size: 17,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                parts.join(' · '),
+                style: const TextStyle(color: Colors.white, fontSize: 12.5),
+              ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: Colors.white70,
+                size: 18,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ControlDock extends ConsumerWidget {
@@ -370,52 +664,62 @@ class _ControlDock extends ConsumerWidget {
       children: [
         _GlassButton(
           icon: Icons.keyboard_rounded,
+          tooltip: state.isBusy
+              ? 'Đang xử lý lượt hiện tại'
+              : 'Nhập bằng bàn phím',
           onTap: state.isBusy ? null : onKeyboard,
           size: 52,
         ),
         const SizedBox(width: 20),
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: state.isBusy
-              ? null
-              : () {
-                  if (recording) {
-                    notifier.stopVoiceRecognitionAndSend();
-                  } else {
-                    notifier.startVoiceRecognition();
-                  }
-                },
-          onLongPressStart: state.isBusy || recording
-              ? null
-              : (_) => notifier.startVoiceRecognition(),
-          onLongPressEnd: state.isBusy
-              ? null
-              : (_) => notifier.stopVoiceRecognitionAndSend(),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            width: 76,
-            height: 76,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: recording
-                  ? const Color(0xFFFF557A)
-                  : const Color(0xFF52F4DE),
-              boxShadow: [
-                BoxShadow(
-                  color:
-                      (recording
-                              ? const Color(0xFFFF557A)
-                              : const Color(0xFF52F4DE))
-                          .withValues(alpha: 0.32),
-                  blurRadius: recording ? 28 : 18,
-                  spreadRadius: 3,
-                ),
-              ],
-            ),
-            child: Icon(
-              recording ? Icons.stop_rounded : Icons.mic_rounded,
-              color: const Color(0xFF03201D),
-              size: 34,
+        Semantics(
+          button: true,
+          enabled: !state.isBusy,
+          label: recording
+              ? 'Dừng nghe và gửi câu nói'
+              : 'Bắt đầu nói tiếng Nhật',
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: state.isBusy
+                ? null
+                : () {
+                    if (recording) {
+                      notifier.stopVoiceRecognitionAndSend();
+                    } else {
+                      notifier.startVoiceRecognition();
+                    }
+                  },
+            onLongPressStart: state.isBusy || recording
+                ? null
+                : (_) => notifier.startVoiceRecognition(),
+            onLongPressEnd: state.isBusy
+                ? null
+                : (_) => notifier.stopVoiceRecognitionAndSend(),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: recording
+                    ? const Color(0xFFFF557A)
+                    : const Color(0xFF52F4DE),
+                boxShadow: [
+                  BoxShadow(
+                    color:
+                        (recording
+                                ? const Color(0xFFFF557A)
+                                : const Color(0xFF52F4DE))
+                            .withValues(alpha: 0.32),
+                    blurRadius: recording ? 28 : 18,
+                    spreadRadius: 3,
+                  ),
+                ],
+              ),
+              child: Icon(
+                recording ? Icons.stop_rounded : Icons.mic_rounded,
+                color: const Color(0xFF03201D),
+                size: 34,
+              ),
             ),
           ),
         ),
@@ -424,6 +728,7 @@ class _ControlDock extends ConsumerWidget {
           icon: soundEnabled
               ? Icons.volume_up_rounded
               : Icons.volume_off_rounded,
+          tooltip: soundEnabled ? 'Tắt tiếng Miku' : 'Bật tiếng Miku',
           onTap: onSound,
           size: 52,
         ),
@@ -497,25 +802,39 @@ class _Composer extends StatelessWidget {
 }
 
 class _GlassButton extends StatelessWidget {
-  const _GlassButton({required this.icon, required this.onTap, this.size = 44});
+  const _GlassButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.size = 44,
+  });
   final IconData icon;
+  final String tooltip;
   final VoidCallback? onTap;
   final double size;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.white.withValues(alpha: 0.08),
-    shape: const CircleBorder(),
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: onTap,
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: Icon(
-          icon,
-          color: onTap == null ? Colors.white24 : Colors.white,
-          size: size * 0.47,
+  Widget build(BuildContext context) => Tooltip(
+    message: tooltip,
+    child: Semantics(
+      button: true,
+      enabled: onTap != null,
+      label: tooltip,
+      child: Material(
+        color: Colors.white.withValues(alpha: 0.08),
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: Icon(
+              icon,
+              color: onTap == null ? Colors.white24 : Colors.white,
+              size: size * 0.47,
+            ),
+          ),
         ),
       ),
     ),

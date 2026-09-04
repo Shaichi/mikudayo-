@@ -129,8 +129,8 @@ class ConversationViewModel extends Notifier<ConversationState> {
   /// Gesture cho một lượt: ưu tiên Gemini, fallback theo emotion.
   static MikuGesture gestureFor(ConversationResult result) =>
       result.gesture == MikuGesture.none
-          ? _emotionGestureFallback[result.emotion] ?? MikuGesture.none
-          : result.gesture;
+      ? _emotionGestureFallback[result.emotion] ?? MikuGesture.none
+      : result.gesture;
 
   static const _emotionGestureFallback = {
     MikuEmotion.happy: MikuGesture.clap,
@@ -139,8 +139,7 @@ class ConversationViewModel extends Notifier<ConversationState> {
     MikuEmotion.sad: MikuGesture.sad,
   };
 
-  static final RegExp _greetingPattern =
-      RegExp(r'(こんにちは|こんばんは|おはよう|はじめまして)');
+  static final RegExp _greetingPattern = RegExp(r'(こんにちは|こんばんは|おはよう|はじめまして)');
 
   bool _waveShown = false;
 
@@ -161,6 +160,22 @@ class ConversationViewModel extends Notifier<ConversationState> {
         Message(kind: MessageKind.system, text: text),
       ],
     );
+  }
+
+  /// Kết thúc phần trình bày hiện tại và tạo một phiên cục bộ hoàn toàn mới.
+  /// `sessionId` rỗng khiến backend tạo session mới ở lượt gửi tiếp theo.
+  Future<void> startNewSession() async {
+    _stopTick();
+    if (state.phase == ConversationPhase.recording) {
+      await cancelVoiceRecognition();
+    }
+    await _audio.stop();
+    final avatar = ref.read(avatarControllerProvider.notifier);
+    avatar.stopMouth();
+    avatar.stopGesture();
+    avatar.setEmotion(MikuEmotion.neutral);
+    _waveShown = false;
+    state = const ConversationState();
   }
 
   // ---------- Phase 1: text ----------
@@ -394,7 +409,8 @@ class ConversationViewModel extends Notifier<ConversationState> {
       // Audio nền lỗi không làm mất câu trả lời text đã có.
     }
     avatar.stopMouth();
-    avatar.stopGesture(); // dọn thinking/wave còn treo nếu audio lỗi (gestureFor trả none không tự dọn)
+    avatar
+        .stopGesture(); // dọn thinking/wave còn treo nếu audio lỗi (gestureFor trả none không tự dọn)
 
     // Gesture theo ngữ cảnh trả lời (sau khi audio đã bắt đầu phát).
     avatar.playGesture(gestureFor(result));

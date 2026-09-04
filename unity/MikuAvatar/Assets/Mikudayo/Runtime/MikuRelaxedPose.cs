@@ -12,8 +12,10 @@ namespace Mikudayo.Avatar
     {
         public Animator Animator;
 
-        [SerializeField, Range(0f, 90f)] private float upperArmDrop = 68f;
-        [SerializeField, Range(0f, 45f)] private float elbowBend = 0f;
+        [Header("Static polite arm pose")]
+        [SerializeField, Range(0f, 90f)] private float upperArmDrop = 74f;
+        [SerializeField, Range(0f, 45f)] private float elbowBend = 32f;
+        [SerializeField, Range(-60f, 60f)] private float armForward = 35f;
 
         [Header("Procedural idle")]
         [SerializeField, Range(0f, 3f)] private float breathingDegrees = 0.8f;
@@ -66,7 +68,7 @@ namespace Mikudayo.Avatar
             if (leftUpperArm == null || rightUpperArm == null ||
                 leftLowerArm == null || rightLowerArm == null)
             {
-                Debug.LogWarning("MikuAvatar: relaxed pose arm bones are missing");
+                Debug.LogWarning("MikuAvatar: static arm pose bones are missing");
                 enabled = false;
                 return;
             }
@@ -132,15 +134,16 @@ namespace Mikudayo.Avatar
                     headTilt * 0.65f);
             }
 
-            // The mirrored signs turn the imported near-T-pose into a relaxed
-            // A-pose while a tiny breathing offset keeps the arms from freezing.
-            var armBreath = breath * 0.55f;
+            // One fixed, mirrored pose: hands rest together in front of the
+            // lower abdomen. No arm animation is generated from this point.
             leftUpperArm.localRotation = leftUpperArmRest * Quaternion.Euler(
-                armBreath, 0f, upperArmDrop + slowSway * 0.35f);
+                armForward, 0f, upperArmDrop);
             rightUpperArm.localRotation = rightUpperArmRest * Quaternion.Euler(
-                armBreath, 0f, -upperArmDrop - slowSway * 0.35f);
-            leftLowerArm.localRotation = leftLowerArmRest * Quaternion.Euler(0f, 0f, elbowBend);
-            rightLowerArm.localRotation = rightLowerArmRest * Quaternion.Euler(0f, 0f, -elbowBend);
+                armForward, 0f, -upperArmDrop);
+            leftLowerArm.localRotation = leftLowerArmRest * Quaternion.Euler(
+                0f, 0f, elbowBend);
+            rightLowerArm.localRotation = rightLowerArmRest * Quaternion.Euler(
+                0f, 0f, -elbowBend);
         }
     }
 }

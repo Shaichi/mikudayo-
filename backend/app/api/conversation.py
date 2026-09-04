@@ -10,17 +10,19 @@ Luồng MVP (mục 5.1):
 from __future__ import annotations
 
 import json
+import asyncio
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from ..core.config import settings
 from ..core.logging import get_logger
 from ..repositories import conversation_repository as conv_repo
-from ..repositories import vocab_repository as vocab_repo
 from ..schemas.conversation import (
     AudioGenerationStatus,
     ConversationResult,
@@ -42,6 +44,36 @@ router = APIRouter()
 
 _gemini = GeminiService()
 _fish_audio = FishAudioService()
+_audio_slots = asyncio.Semaphore(settings.AUDIO_MAX_CONCURRENCY)
+
+
+async def shutdown_services() -> None:
+    await _fish_audio.close()
+
+
+async def recover_audio_jobs() -> None:
+    """Requeue recent pending jobs after an in-process task was interrupted."""
+    since = datetime.now(timezone.utc).timestamp() - settings.AUDIO_STALE_SECONDS
+    since_iso = datetime.fromtimestamp(since, timezone.utc).isoformat(timespec="seconds")
+    recovered = 0
+    for turn in conv_repo.list_pending_audio_turns(since_iso):
+        status_path = _audio_status_path(turn["id"])
+        if status_path.exists():
+            try:
+                status = AudioGenerationStatus.model_validate_json(
+                    status_path.read_text(encoding="utf-8")
+                )
+                if status.status == "error":
+                    continue
+            except Exception:
+                pass
+        _write_audio_status(turn["id"], AudioGenerationStatus())
+        asyncio.create_task(
+            _generate_and_store_audio(turn["id"], turn["reply_ja"], turn["emotion"])
+        )
+        recovered += 1
+    if recovered:
+        logger.info("Đã khôi phục %d audio job sau khi process khởi động lại.", recovered)
 
 
 def _audio_status_path(turn_id: str):
@@ -59,15 +91,45 @@ def _write_audio_status(turn_id: str, status: AudioGenerationStatus) -> None:
     temporary.replace(path)
 
 
+def cleanup_temp_audio() -> None:
+    """Remove expired audio/status files and clear stale DB file references."""
+    root = settings.TEMP_AUDIO_DIR
+    if not root.exists():
+        return
+    cutoff = time.time() - settings.TEMP_TTL_SECONDS
+    removed: list[str] = []
+    for path in root.iterdir():
+        if not path.is_file() or path.stat().st_mtime >= cutoff:
+            continue
+        try:
+            removed.append(str(path))
+            path.unlink()
+        except OSError as exc:
+            logger.warning("Không xóa được file tạm %s: %s", path.name, exc)
+    conv_repo.clear_audio_paths(removed)
+    if removed:
+        logger.info("Đã dọn %d file audio/status hết hạn.", len(removed))
+
+
 @router.get("/v1/audio/{turn_id}/status", response_model=AudioGenerationStatus)
 async def get_audio_status(turn_id: str) -> AudioGenerationStatus:
     """Cho Flutter poll nhẹ trong khi Fish Audio đang chạy nền."""
     status_path = _audio_status_path(turn_id)
     if status_path.exists():
         try:
-            return AudioGenerationStatus.model_validate_json(
+            status = AudioGenerationStatus.model_validate_json(
                 status_path.read_text(encoding="utf-8")
             )
+            if (
+                status.status == "pending"
+                and time.time() - status_path.stat().st_mtime > settings.AUDIO_STALE_SECONDS
+            ):
+                return AudioGenerationStatus(
+                    status="error",
+                    voice_mode="none",
+                    error="audio_job_expired",
+                )
+            return status
         except Exception as exc:
             logger.warning("Không đọc được audio status %s: %s", turn_id, exc)
 
@@ -116,32 +178,65 @@ async def conversation_turn(
     jlpt_level: JpLevel = Form(default="N5"),
     scenario: str = Form(default=""),
     text: str = Form(default="", description="Transcript hoặc text người dùng"),
+    client_request_id: str = Form(default="", description="Idempotency key do client tạo"),
 ) -> ConversationResult:
     request_started = time.perf_counter()
     timing: dict = {}
     user_text = (text or "").strip()
     if not user_text:
         raise HTTPException(422, "Cần gửi transcript hoặc text.")
+    if len(user_text) > settings.MAX_TEXT_LENGTH:
+        raise HTTPException(422, f"Text tối đa {settings.MAX_TEXT_LENGTH} ký tự.")
+    scenario = (scenario or "").strip()
+    if len(scenario) > settings.MAX_SCENARIO_LENGTH:
+        raise HTTPException(422, f"Scenario tối đa {settings.MAX_SCENARIO_LENGTH} ký tự.")
+    client_request_id = (client_request_id or "").strip()[:100]
+
+    if client_request_id:
+        existing = conv_repo.get_turn_by_request_id(client_request_id)
+        if existing:
+            vocabulary = conv_repo.get_turn_vocabulary(existing["id"])
+            return ConversationResult(
+                turn_id=existing["id"],
+                session_id=existing["session_id"],
+                transcript_ja=existing.get("transcript_ja") or user_text,
+                reply_ja=existing["reply_ja"],
+                correction_ja=existing.get("correction_ja"),
+                explanation_vi=existing.get("explanation_vi"),
+                emotion=existing.get("emotion", "neutral"),
+                gesture=existing.get("gesture", "none"),
+                vocabulary=vocabulary,
+                audio_url="",
+                voice_mode="pending" if not existing.get("audio_path") else "fish_audio",
+                mouth_cues=[],
+                timing_ms={"idempotent": True},
+            )
 
     # --- Session ---
     # Dùng session có sẵn nếu tồn tại; ngược lại tạo session mới.
-    sid = session_id if session_id and conv_repo.get_session(session_id) else None
-    if sid is None:
-        sid = conv_repo.new_session(mode, jlpt_level, scenario or None)
-
-    summary = conv_repo.get_session(sid).get("summary") or ""
-    recent = conv_repo.get_recent_turns(sid, settings.GEMINI_MAX_TURNS)
+    session = conv_repo.get_session(session_id) if session_id else None
+    if session_id and session is None:
+        raise HTTPException(404, "Session không tồn tại.")
+    sid = session["id"] if session else None
+    # A session owns its learning settings.  Ignore accidental per-request
+    # changes instead of mixing labels and prompts across one history.
+    effective_mode = session["mode"] if session else mode
+    effective_level = session["jlpt_level"] if session else jlpt_level
+    effective_scenario = session.get("scenario") or "" if session else scenario
+    summary = (session or {}).get("summary") or ""
+    recent = conv_repo.get_recent_turns(sid, settings.GEMINI_MAX_TURNS) if sid else []
 
     # --- Gemini (text only) ---
     t0 = time.perf_counter()
     try:
-        out = _gemini.generate_turn(
+        out = await run_in_threadpool(
+            _gemini.generate_turn,
             user_text,
-            mode,
-            jlpt_level,
+            effective_mode,
+            effective_level,
             summary,
             recent,
-            scenario or "",
+            effective_scenario,
         )
     except ValidationError:
         raise HTTPException(502, "Gemini trả JSON không đúng schema.")
@@ -150,21 +245,25 @@ async def conversation_turn(
         raise HTTPException(502, "Không gọi được Gemini.")
     timing["gemini_ms"] = int((time.perf_counter() - t0) * 1000)
 
-    # Lưu text trước để phản hồi Flutter ngay; audio được tạo ở background.
-    turn_id = conv_repo.add_turn(
+    # Create a new session only after Gemini succeeds, avoiding empty sessions
+    # when the provider is unavailable.
+    if sid is None:
+        sid = conv_repo.new_session(mode, jlpt_level, scenario or None)
+
+    # Store the exact transcript sent by the learner; model output is not an
+    # authoritative speech-to-text source.
+    turn_id = conv_repo.add_turn_with_vocabulary(
         session_id=sid,
-        transcript_ja=out.transcript_ja,
+        transcript_ja=user_text,
         reply_ja=out.reply_ja,
         correction_ja=out.correction_ja,
         explanation_vi=out.explanation_vi,
         emotion=out.emotion,
-        audio_path=None,  # set sau khi ghi file (đặt tên theo turn_id)
+        gesture=out.gesture,
+        difficulty=out.difficulty,
+        vocabulary=[item.model_dump() for item in out.vocabulary],
+        client_request_id=client_request_id or None,
     )
-
-    # --- Lưu vocabulary ---
-    for item in out.vocabulary:
-        vid = vocab_repo.upsert_vocab(item)
-        vocab_repo.link_turn_vocab(turn_id, vid)
 
     _write_audio_status(turn_id, AudioGenerationStatus())
     background_tasks.add_task(
@@ -178,7 +277,7 @@ async def conversation_turn(
     return ConversationResult(
         turn_id=turn_id,
         session_id=sid,
-        transcript_ja=out.transcript_ja,
+        transcript_ja=user_text,
         reply_ja=out.reply_ja,
         correction_ja=out.correction_ja,
         explanation_vi=out.explanation_vi,
@@ -200,10 +299,11 @@ async def _generate_and_store_audio(
     """Tạo giọng sau khi response text đã được gửi về Flutter."""
     started = time.perf_counter()
     try:
-        audio, voice_mode, mouth_cues, timing = await _generate_audio(
-            reply_ja,
-            emotion,
-        )
+        async with _audio_slots:
+            audio, voice_mode, mouth_cues, timing = await _generate_audio(
+                reply_ja,
+                emotion,
+            )
         if not audio.data:
             raise RuntimeError("Không tạo được audio")
 
@@ -230,7 +330,7 @@ async def _generate_and_store_audio(
             AudioGenerationStatus(
                 status="error",
                 voice_mode="none",
-                error=str(exc),
+                error="audio_generation_failed",
                 timing_ms={
                     "audio_total_ms": int((time.perf_counter() - started) * 1000)
                 },
@@ -242,6 +342,8 @@ async def _generate_audio(
     reply_ja: str, emotion: str = "neutral"
 ) -> tuple[AudioPayload, str, list, dict[str, int]]:
     """Tạo audio online bằng Fish Audio hoặc WAV mock khi chưa cấu hình key."""
+    if len(reply_ja) > settings.FISH_MAX_TEXT_LENGTH:
+        raise ValueError("Reply vượt giới hạn audio.")
     if not settings.ALLOW_MOCK and not _fish_audio.is_configured():
         raise RuntimeError("Fish Audio chưa được cấu hình")
 

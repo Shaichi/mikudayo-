@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/theme.dart';
 import '../../core/errors/api_exception.dart';
 import '../../data/models/session_record.dart';
 import '../../data/repositories/conversation_repository.dart';
 import '../../data/services/api_service.dart';
+import '../conversation/conversation_screen.dart';
 
 /// Màn hình lịch sử: danh sách phiên → chi tiết các lượt hội thoại.
 class HistoryScreen extends ConsumerStatefulWidget {
@@ -18,6 +20,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   List<SessionRecord>? _sessions;
   String? _error;
   bool _loading = true;
+  String? _openingSessionId;
 
   @override
   void initState() {
@@ -32,11 +35,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     });
     final serverUrl = ref.read(appSettingsProvider).serverUrl;
     try {
-      final sessions =
-          await ref.read(conversationRepositoryProvider).getSessions(serverUrl);
-      setState(() => _sessions = sessions);
+      final sessions = await ref
+          .read(conversationRepositoryProvider)
+          .getSessions(serverUrl);
+      if (mounted) setState(() => _sessions = sessions);
     } on ApiException catch (e) {
-      setState(() => _error = e.userMessage);
+      if (mounted) setState(() => _error = e.userMessage);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -55,7 +59,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           ),
         ],
       ),
-      body: _buildBody(),
+      body: SafeArea(top: false, child: _buildBody()),
     );
   }
 
@@ -68,17 +72,19 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     }
     final sessions = _sessions ?? const [];
     if (sessions.isEmpty) {
-      return const Center(
-        child: Text('Chưa có hội thoại nào.\nBắt đầu trò chuyện với Miku nhé!',
-            textAlign: TextAlign.center),
+      return _EmptyHistory(
+        onStart: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const ConversationScreen())),
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
       itemCount: sessions.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, i) => _SessionCard(
         session: sessions[i],
+        isOpening: _openingSessionId == sessions[i].id,
         onTap: () => _openSession(sessions[i]),
         onDelete: () => _deleteSession(sessions[i]),
       ),
@@ -86,6 +92,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 
   Future<void> _openSession(SessionRecord session) async {
+    if (_openingSessionId != null) return;
+    setState(() => _openingSessionId = session.id);
     final serverUrl = ref.read(appSettingsProvider).serverUrl;
     try {
       final turns = await ref
@@ -99,8 +107,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       );
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.userMessage)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.userMessage)));
+    } finally {
+      if (mounted) setState(() => _openingSessionId = null);
     }
   }
 
@@ -109,7 +120,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Xóa phiên?'),
-        content: Text('Xóa phiên ${session.modeLabel} này và toàn bộ lượt hội thoại?'),
+        content: Text(
+          'Xóa phiên ${session.modeLabel} này và toàn bộ lượt hội thoại?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -132,8 +145,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       _load();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.userMessage)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.userMessage)));
     }
   }
 }
@@ -141,11 +155,13 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 class _SessionCard extends StatelessWidget {
   const _SessionCard({
     required this.session,
+    required this.isOpening,
     required this.onTap,
     required this.onDelete,
   });
 
   final SessionRecord session;
+  final bool isOpening;
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
@@ -153,30 +169,143 @@ class _SessionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Card(
-      child: ListTile(
-        onTap: onTap,
-        leading: CircleAvatar(
-          backgroundColor: scheme.primaryContainer,
-          child: Icon(Icons.chat_bubble_outline, color: scheme.primary),
-        ),
-        title: Text('${session.modeLabel} · ${session.jlptLevel}'),
-        subtitle: Text(
-          '${session.turnCount} lượt · ${_formatDate(session.createdAt)}',
-          style: const TextStyle(fontSize: 12.5),
-        ),
-        trailing: IconButton(
-          tooltip: 'Xóa phiên',
-          onPressed: onDelete,
-          icon: const Icon(Icons.delete_outline),
+      child: InkWell(
+        onTap: isOpening ? null : onTap,
+        borderRadius: BorderRadius.circular(MikuTheme.radiusMedium),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(Icons.forum_outlined, color: scheme.primary),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${session.modeLabel} · ${session.jlptLevel}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    if ((session.summary ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        session.summary!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    Text(
+                      '${session.turnCount} lượt · ${_formatDate(session.createdAt)}',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isOpening)
+                const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else
+                PopupMenuButton<String>(
+                  tooltip: 'Tùy chọn phiên',
+                  onSelected: (value) {
+                    if (value == 'delete') onDelete();
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_outline),
+                          SizedBox(width: 10),
+                          Text('Xóa phiên'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   String _formatDate(String iso) {
-    final t = iso.split('T');
-    return t.length == 2 ? '${t[0]} ${t[1].substring(0, 5)}' : iso;
+    final parsed = DateTime.tryParse(iso)?.toLocal();
+    if (parsed == null) return iso;
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${two(parsed.day)}/${two(parsed.month)}/${parsed.year} · '
+        '${two(parsed.hour)}:${two(parsed.minute)}';
   }
+}
+
+class _EmptyHistory extends StatelessWidget {
+  const _EmptyHistory({required this.onStart});
+
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: MikuTheme.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.forum_outlined,
+              color: MikuTheme.primary,
+              size: 32,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'Chưa có buổi luyện nào',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Bắt đầu nói chuyện và Miku sẽ lưu lại hành trình học của bạn tại đây.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: onStart,
+            icon: const Icon(Icons.mic_rounded),
+            label: const Text('Luyện ngay'),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _SessionDetailScreen extends StatelessWidget {
@@ -225,7 +354,9 @@ class _SessionDetailScreen extends StatelessWidget {
                             t.explanationVi!,
                             style: TextStyle(
                               fontSize: 12.5,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
                             ),
                           ),
                         ],
@@ -240,11 +371,7 @@ class _SessionDetailScreen extends StatelessWidget {
 }
 
 class _Labeled extends StatelessWidget {
-  const _Labeled({
-    required this.text,
-    required this.body,
-    this.accent = false,
-  });
+  const _Labeled({required this.text, required this.body, this.accent = false});
 
   final String text;
   final String body;
@@ -284,8 +411,11 @@ class _ErrorRetry extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.cloud_off,
-                size: 48, color: Theme.of(context).colorScheme.error),
+            Icon(
+              Icons.cloud_off,
+              size: 48,
+              color: Theme.of(context).colorScheme.error,
+            ),
             const SizedBox(height: 12),
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 12),

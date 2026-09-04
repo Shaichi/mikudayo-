@@ -19,12 +19,14 @@ namespace Mikudayo.Avatar
         };
 
         private bool captureEnabled;
+        private bool gestureCaptureEnabled;
         private string outputDirectory;
 
         private void Awake()
         {
             var args = Environment.GetCommandLineArgs();
-            captureEnabled = Array.IndexOf(args, "-mikudayoSmokeCapture") >= 0;
+            gestureCaptureEnabled = Array.IndexOf(args, "-mikudayoGestureCapture") >= 0;
+            captureEnabled = gestureCaptureEnabled || Array.IndexOf(args, "-mikudayoSmokeCapture") >= 0;
             if (!captureEnabled) return;
 
             outputDirectory = GetArgumentValue(args, "-mikudayoSmokeOutput");
@@ -42,6 +44,12 @@ namespace Mikudayo.Avatar
         {
             if (!captureEnabled) yield break;
             if (Bridge == null) Bridge = GetComponent<MikuAvatarBridge>();
+
+            if (gestureCaptureEnabled)
+            {
+                yield return RunGestureCapture();
+                yield break;
+            }
 
             yield return new WaitForSecondsRealtime(1.5f);
             for (var i = 0; i < Emotions.Length; i++)
@@ -66,6 +74,40 @@ namespace Mikudayo.Avatar
 
             Debug.Log("MikuAvatar: SMOKE_CAPTURE_COMPLETE");
             Application.Quit(0);
+        }
+
+        private IEnumerator RunGestureCapture()
+        {
+            yield return new WaitForSecondsRealtime(1.5f);
+            Capture("00_idle");
+
+            var gestures = new[] { "wave", "clap", "sad", "thinking", "surprise", "nod" };
+            for (var i = 0; i < gestures.Length; i++)
+            {
+                var gesture = gestures[i];
+                Bridge.PlayGesture($"{{\"gesture\":\"{gesture}\"}}");
+
+                yield return new WaitForSecondsRealtime(0.8f);
+                Capture($"{i + 1:00}_{gesture}_mid");
+
+                // VRMA clips are about 3.93 seconds long. This frame verifies
+                // that the avatar returns to its idle pose after completion.
+                yield return new WaitForSecondsRealtime(5.3f);
+                Capture($"{i + 1:00}_{gesture}_after");
+                Bridge.StopGesture(string.Empty);
+                yield return new WaitForSecondsRealtime(0.35f);
+            }
+
+            Capture("99_final");
+            Debug.Log("MikuAvatar: GESTURE_CAPTURE_COMPLETE");
+            Application.Quit(0);
+        }
+
+        private void Capture(string name)
+        {
+            var path = Path.Combine(outputDirectory, $"{name}.png");
+            ScreenCapture.CaptureScreenshot(path);
+            Debug.Log($"MikuAvatar: gesture capture={name} path={path}");
         }
 
         private static string GetArgumentValue(string[] args, string key)

@@ -42,6 +42,23 @@ namespace Mikudayo.Avatar
         private bool _attachPending;
         private bool _controlRigChecked;
         private bool _finishedDelivered;
+        private Animator _modelAnimator;
+        private UnityEngine.Avatar _originalAvatar;
+        private readonly Dictionary<Transform, RestBonePose> _restPose = new();
+
+        private readonly struct RestBonePose
+        {
+            public readonly Vector3 LocalPosition;
+            public readonly Quaternion LocalRotation;
+            public readonly Vector3 LocalScale;
+
+            public RestBonePose(Transform bone)
+            {
+                LocalPosition = bone.localPosition;
+                LocalRotation = bone.localRotation;
+                LocalScale = bone.localScale;
+            }
+        }
 
         private sealed class LoadedClip
         {
@@ -51,11 +68,9 @@ namespace Mikudayo.Avatar
         }
 
         /// <summary>
-        /// Bọc clip VRMA: xương vẫn retarget từ clip, nhưng expression map
-        /// chỉ lộ khi weight vượt ngưỡng để biểu cảm fade theo. Runtime
-        /// retarget là all-or-nothing (không có per-bone weight ở bản này)
-        /// nên fade xương thực tế là ramp weight nhanh + detach dứt khoát;
-        /// độ mềm của chuyển tiếp dựa vào lớp procedural tự phục hồi.
+        /// Bọc clip VRMA để weight áp dụng đồng thời cho xương, hips và
+        /// expression. Khi weight về 0, control rig trở về T-pose chuẩn trước
+        /// khi được detach khỏi runtime.
         /// </summary>
         private sealed class WeightedVrmaProxy : IVrm10Animation
         {
@@ -63,16 +78,53 @@ namespace Mikudayo.Avatar
                 new Dictionary<ExpressionKey, Func<float>>();
 
             private readonly Vrm10AnimationInstance _clip;
+            private readonly INormalizedPoseProvider _sourcePose;
+            private readonly ITPoseProvider _sourceTPose;
+            private readonly Vector3 _neutralHips;
+            private readonly BlendedPoseProvider _blendedPose;
             public float Weight;
 
-            public WeightedVrmaProxy(Vrm10AnimationInstance clip) => _clip = clip;
+            public WeightedVrmaProxy(Vrm10AnimationInstance clip)
+            {
+                _clip = clip;
+                _sourcePose = clip.ControlRig.Item1;
+                _sourceTPose = clip.ControlRig.Item2;
+                _neutralHips = _sourcePose.GetRawHipsPosition();
+                _blendedPose = new BlendedPoseProvider(this);
+            }
 
-            public (INormalizedPoseProvider, ITPoseProvider) ControlRig => _clip.ControlRig;
+            public (INormalizedPoseProvider, ITPoseProvider) ControlRig =>
+                (_blendedPose, _sourceTPose);
             public IReadOnlyDictionary<ExpressionKey, Func<float>> ExpressionMap =>
                 Weight > 0.01f ? _clip.ExpressionMap : Empty;
             public LookAtInput? LookAt => null;
             public void ShowBoxMan(bool enable) { if (_clip.BoxMan != null) _clip.BoxMan.enabled = false; }
             public void Dispose() { } // Controller sở hữu instance clip; không destroy ở đây.
+
+            private sealed class BlendedPoseProvider : INormalizedPoseProvider
+            {
+                private readonly WeightedVrmaProxy _owner;
+
+                public BlendedPoseProvider(WeightedVrmaProxy owner) => _owner = owner;
+
+                public Vector3 GetRawHipsPosition()
+                {
+                    var animatedHips = _owner._sourcePose.GetRawHipsPosition();
+                    return Vector3.Lerp(_owner._neutralHips, animatedHips, _owner.Weight);
+                }
+
+                public Quaternion GetNormalizedLocalRotation(
+                    HumanBodyBones bone, HumanBodyBones parentBone)
+                {
+                    var animated = _owner._sourcePose
+                        .GetNormalizedLocalRotation(bone, parentBone);
+                    // The VRMA control rig is normalized: identity is its
+                    // neutral T-pose. Slerp here makes fade affect bones too,
+                    // not only expressions.
+                    return Quaternion.SlerpUnclamped(
+                        Quaternion.identity, animated, _owner.Weight);
+                }
+            }
         }
 
         private void Awake()
@@ -83,6 +135,14 @@ namespace Mikudayo.Avatar
             {
                 Debug.LogWarning("MikuAvatar: gesture controller has no Vrm10Instance");
                 enabled = false;
+                return;
+            }
+
+            _modelAnimator = _instance.GetComponent<Animator>();
+            _originalAvatar = _modelAnimator != null ? _modelAnimator.avatar : null;
+            foreach (var bone in _instance.Humanoid.BoneMap)
+            {
+                if (bone.Item1 != null) _restPose[bone.Item1] = new RestBonePose(bone.Item1);
             }
         }
 
@@ -128,6 +188,7 @@ namespace Mikudayo.Avatar
                 {
                     _attachPending = false;
                     _routine = null;
+                    QueueFinished();
                     yield break;
                 }
 
@@ -218,6 +279,8 @@ namespace Mikudayo.Avatar
                 // legacy Animation component cannot sample; mark them legacy.
                 result.LegacyClip = result.Animation.clip;
                 if (result.LegacyClip != null) result.LegacyClip.legacy = true;
+                if (result.LegacyClip != null) result.LegacyClip.wrapMode = WrapMode.Once;
+                result.Animation.wrapMode = WrapMode.Once;
             }
             if (result.Clip != null && result.Clip.BoxMan != null) result.Clip.BoxMan.enabled = false;
             return result;
@@ -271,6 +334,7 @@ namespace Mikudayo.Avatar
             if (_current.Animation != null) _current.Animation.Stop();
             _current = null;
             _proxy = null;
+            ClearControlRig();
             // Safety net: Detach can also run outside a finishing routine —
             // a new Play() detaches the previous gesture before starting its
             // own, and LateUpdate detaches defensively when the clip, its
@@ -317,8 +381,7 @@ namespace Mikudayo.Avatar
             // not pass useControlRig to Vrm10Importer). VRMA retargeting needs
             // one, so build it once with the same call Vrm10Runtime would use.
             var runtime = _instance.Runtime;
-            var backingField = typeof(Vrm10Runtime).GetField("<ControlRig>k__BackingField",
-                BindingFlags.NonPublic | BindingFlags.Instance);
+            var backingField = GetControlRigBackingField();
             if (backingField == null)
             {
                 Debug.LogWarning("MikuAvatar: Vrm10Runtime.ControlRig backing field was not found; VRMA gestures unavailable");
@@ -329,6 +392,61 @@ namespace Mikudayo.Avatar
             backingField.SetValue(runtime, controlRig);
             Debug.Log("MikuAvatar: built VRM control rig for VRMA gesture retargeting");
             return controlRig;
+        }
+
+        private void ClearControlRig()
+        {
+            if (_instance == null) return;
+
+            var runtime = _instance.Runtime;
+            var rig = runtime.ControlRig;
+
+            // Vrm10RuntimeControlRig temporarily swaps the model Animator's
+            // avatar. Restore the imported avatar after destroying the rig so
+            // MikuRelaxedPose and MikuIdlePool stay humanoid for later clips.
+            if (rig != null)
+            {
+                // UniVRM 0.127.2's Dispose() passes a Transform to
+                // Object.Destroy(), which Unity rejects at runtime. Remove
+                // the generated avatar and its GameObject explicitly.
+                var generatedAvatar = rig.ControlRigAnimator != null
+                    ? rig.ControlRigAnimator.avatar
+                    : null;
+                Transform generatedRoot = null;
+                if (rig.Bones.TryGetValue(HumanBodyBones.Hips, out var hips))
+                {
+                    generatedRoot = hips.ControlBone != null
+                        ? hips.ControlBone.parent
+                        : null;
+                }
+
+                if (generatedAvatar != null) Destroy(generatedAvatar);
+                if (generatedRoot != null) Destroy(generatedRoot.gameObject);
+            }
+
+            if (_modelAnimator != null) _modelAnimator.avatar = _originalAvatar;
+
+            var backingField = GetControlRigBackingField();
+            if (backingField != null) backingField.SetValue(runtime, null);
+            _controlRigChecked = false;
+            RestoreImportedPose();
+        }
+
+        private void RestoreImportedPose()
+        {
+            foreach (var pair in _restPose)
+            {
+                if (pair.Key == null) continue;
+                pair.Key.localPosition = pair.Value.LocalPosition;
+                pair.Key.localRotation = pair.Value.LocalRotation;
+                pair.Key.localScale = pair.Value.LocalScale;
+            }
+        }
+
+        private static FieldInfo GetControlRigBackingField()
+        {
+            return typeof(Vrm10Runtime).GetField("<ControlRig>k__BackingField",
+                BindingFlags.NonPublic | BindingFlags.Instance);
         }
     }
 }

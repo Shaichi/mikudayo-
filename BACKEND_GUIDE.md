@@ -32,9 +32,19 @@ FISH_REFERENCE_ID=3317b3ca88d74206b5478a22a2d502b9
 FISH_AUDIO_FORMAT=wav
 FISH_LATENCY=low
 ALLOW_MOCK=false
+ENVIRONMENT=production
+REQUIRE_AUTH=true
+API_TOKEN=<token-dài-ngẫu-nhiên>
+CORS_ORIGINS=https://your-web-client.example
+TRUSTED_HOSTS=your-api.example
 ```
 
 Không commit `backend/.env`.
+
+Ở local có thể dùng `ENVIRONMENT=development`, `ALLOW_MOCK=true` và để trống
+`API_TOKEN`. Khi chạy public, bắt buộc dùng `ALLOW_MOCK=false`, bật
+`REQUIRE_AUTH=true`, đặt `API_TOKEN` trong backend và gửi token qua
+`Authorization: Bearer <token>` hoặc `X-API-Key`. Không đặt token vào URL.
 
 ## 2. Cài dependencies
 
@@ -110,7 +120,9 @@ Luồng hiện tại dùng REST `/v1/tts` và tải audio trong background. SSE/
 
 - Kiểm tra `FISH_API_KEY` và `FISH_REFERENCE_ID` trong `backend/.env`.
 - Restart backend sau khi sửa `.env`.
-- `/health` chỉ kiểm tra cấu hình để không tiêu quota TTS.
+- `/health` chỉ kiểm tra cấu hình để không tiêu quota TTS. `status=degraded`
+  nghĩa là process còn sống nhưng một dependency chưa sẵn sàng; dùng
+  `/health/live` cho liveness probe.
 
 ### Audio status trả `error`
 
@@ -126,7 +138,10 @@ Luồng hiện tại dùng REST `/v1/tts` và tải audio trong background. SSE/
 
 ### Chạy UI không có API key
 
-Đặt `ALLOW_MOCK=true`. Backend trả WAV diagnostic ngắn để kiểm tra playback; đó không phải giọng Fish Audio.
+Đặt `ENVIRONMENT=development` và `ALLOW_MOCK=true`. Backend trả WAV
+diagnostic ngắn để kiểm tra playback; đó không phải giọng Fish Audio. Request
+text bị giới hạn theo `MAX_TEXT_LENGTH`, audio tạm được dọn theo
+`TEMP_TTL_SECONDS`.
 
 ## 7. Bảo mật và quyền sử dụng
 

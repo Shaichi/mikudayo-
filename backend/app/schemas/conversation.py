@@ -18,36 +18,36 @@ AudioStatusValue = Literal["pending", "ready", "error"]
 
 
 class VocabItem(BaseModel):
-    word: str = Field(description="Từ mới bằng tiếng Nhật")
-    reading: str = Field(default="", description="Cách đọc (furigana)")
-    meaning_vi: str = Field(default="", description="Nghĩa tiếng Việt")
+    word: str = Field(min_length=1, max_length=80, description="Từ mới bằng tiếng Nhật")
+    reading: str = Field(default="", max_length=120, description="Cách đọc (furigana)")
+    meaning_vi: str = Field(default="", max_length=240, description="Nghĩa tiếng Việt")
 
 
 class MouthCue(BaseModel):
-    t_ms: int = Field(description="Thời điểm tính từ đầu audio (ms)")
-    mouth: float = Field(description="Độ mở miệng 0..1")
+    t_ms: int = Field(ge=0, description="Thời điểm tính từ đầu audio (ms)")
+    mouth: float = Field(ge=0.0, le=1.0, description="Độ mở miệng 0..1")
 
 
 class GeminiTurnOutput(BaseModel):
     """JSON schema yêu cầu Gemini trả về (mục 8.3)."""
 
-    transcript_ja: str = Field(description="Lời người học nói, phiên âm tiếng Nhật")
-    reply_ja: str = Field(description="Câu trả lời của Miku bằng tiếng Nhật")
-    correction_ja: Optional[str] = Field(default=None, description="Câu sửa ngữ pháp nếu có")
-    explanation_vi: Optional[str] = Field(default=None, description="Giải thích lỗi bằng tiếng Việt")
+    transcript_ja: str = Field(min_length=1, max_length=10000, description="Lời người học nói, phiên âm tiếng Nhật")
+    reply_ja: str = Field(min_length=1, max_length=2000, description="Câu trả lời của Miku bằng tiếng Nhật")
+    correction_ja: Optional[str] = Field(default=None, max_length=2000, description="Câu sửa ngữ pháp nếu có")
+    explanation_vi: Optional[str] = Field(default=None, max_length=4000, description="Giải thích lỗi bằng tiếng Việt")
     emotion: Emotion = Field(default="neutral", description="Cảm xúc của Miku")
     gesture: Gesture = Field(default="none", description="Cử chỉ thân/tay cho avatar")
     difficulty: JpLevel = Field(default="N5", description="Độ khó nhận định")
-    vocabulary: list[VocabItem] = Field(default_factory=list, description="Từ mới trong lượt")
+    vocabulary: list[VocabItem] = Field(default_factory=list, max_length=4, description="Từ mới trong lượt")
 
 
 class ConversationRequest(BaseModel):
-    session_id: Optional[str] = None
+    session_id: Optional[str] = Field(default=None, max_length=100)
     mode: Mode = "free_talk"
     jlpt_level: JpLevel = "N5"
-    scenario: Optional[str] = None
+    scenario: Optional[str] = Field(default=None, max_length=240)
     # text hỗ trợ Phase 1 — chat text thuần (không cần audio)
-    text: Optional[str] = None
+    text: Optional[str] = Field(default=None, max_length=2000)
 
 
 class ConversationResult(BaseModel):
@@ -96,6 +96,9 @@ class TurnRecord(BaseModel):
     correction_ja: Optional[str]
     explanation_vi: Optional[str]
     emotion: str
+    gesture: str = "none"
+    difficulty: str = "N5"
+    audio_path: Optional[str] = None
     created_at: str
 
 

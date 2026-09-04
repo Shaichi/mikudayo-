@@ -90,3 +90,6 @@ assets/vrm/
 /unity-android-*.txt
 /runlog.txt
 /screen*.png
+/smoke-*/
+/vrma-backup-*/
+

@@ -39,7 +39,7 @@ def _read_wav_samples(wav_bytes: bytes) -> tuple[list[int], int]:
     # Mix xuống mono nếu stereo.
     if n_channels > 1:
         samples = [
-            samples[i] + samples[i + 1]
+            round(sum(samples[i : i + n_channels]) / n_channels)
             for i in range(0, len(samples) - n_channels + 1, n_channels)
         ]
     return list(samples), rate
@@ -76,12 +76,15 @@ def compute_mouth_cues(wav_bytes: bytes, window_ms: int = 50) -> list[MouthCue]:
         return []
 
     # Map RMS sang 0..1: dùng percentile 95 làm "miệng mở tối đa".
-    max_rms = sorted(rms_values)[int(len(rms_values) * 0.95) - 1]
+    percentile_index = max(0, min(len(rms_values) - 1, int(len(rms_values) * 0.95) - 1))
+    max_rms = sorted(rms_values)[percentile_index]
     max_rms = max(max_rms, 1.0)
+    noise_floor = max(1.0, max_rms * 0.04)
 
     cues: list[MouthCue] = []
     for i, rms in enumerate(rms_values):
-        mouth = min(1.0, max(0.02, rms / max_rms))
+        # Silence should close the mouth; only a small noise floor is lifted.
+        mouth = 0.0 if rms <= noise_floor else min(1.0, (rms - noise_floor) / max_rms)
         cues.append(MouthCue(t_ms=i * window_ms, mouth=round(mouth, 3)))
 
     return cues

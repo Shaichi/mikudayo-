@@ -21,6 +21,7 @@ class _UnityAvatarState extends ConsumerState<UnityAvatar>
     with WidgetsBindingObserver {
   static const _bridgeObject = 'MikuAvatarBridge';
   bool _ready = false;
+  bool _slowStart = false;
   MikuEmotion? _lastEmotion;
   int _lastSpeechSeq = -1;
   int _lastGestureSeq = -1;
@@ -44,7 +45,12 @@ class _UnityAvatarState extends ConsumerState<UnityAvatar>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _ready = false;
+      if (mounted) {
+        setState(() {
+          _ready = false;
+          _slowStart = false;
+        });
+      }
       _startHandshake();
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
@@ -59,7 +65,14 @@ class _UnityAvatarState extends ConsumerState<UnityAvatar>
           (message['type'] == 'ready' || message['type'] == 'pong')) {
         _handshakeTimer?.cancel();
         if (_ready) return;
-        _ready = true;
+        if (mounted) {
+          setState(() {
+            _ready = true;
+            _slowStart = false;
+          });
+        } else {
+          _ready = true;
+        }
         _lastEmotion = null;
         _lastSpeechSeq = -1;
         _lastGestureSeq = -1;
@@ -88,6 +101,9 @@ class _UnityAvatarState extends ConsumerState<UnityAvatar>
       _handshakeAttempt += 1;
       debugPrint('[Avatar] Unity ping attempt=$_handshakeAttempt');
       sendToUnity(_bridgeObject, 'Ping', 'flutter_attach');
+      if (_handshakeAttempt == 10 && mounted) {
+        setState(() => _slowStart = true);
+      }
     }
 
     Future<void>.delayed(const Duration(milliseconds: 250), () {
@@ -98,6 +114,14 @@ class _UnityAvatarState extends ConsumerState<UnityAvatar>
         (_) => ping(),
       );
     });
+  }
+
+  void _retryHandshake() {
+    setState(() {
+      _ready = false;
+      _slowStart = false;
+    });
+    _startHandshake();
   }
 
   void _sync(AvatarState state) {
@@ -154,6 +178,55 @@ class _UnityAvatarState extends ConsumerState<UnityAvatar>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _sync(avatarState);
     });
-    return EmbedUnity(onMessageFromUnity: _onUnityMessage);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        EmbedUnity(onMessageFromUnity: _onUnityMessage),
+        if (!_ready)
+          ColoredBox(
+            color: const Color(0xFF03080D).withValues(alpha: 0.72),
+            child: Center(
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 32),
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF102126).withValues(alpha: 0.94),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: Color(0xFF52F4DE),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _slowStart
+                          ? 'Avatar đang khởi động lâu hơn dự kiến.'
+                          : 'Đang chuẩn bị Miku…',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    if (_slowStart) ...[
+                      const SizedBox(height: 10),
+                      TextButton.icon(
+                        onPressed: _retryHandshake,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Thử lại'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }

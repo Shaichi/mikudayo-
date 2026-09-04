@@ -5,6 +5,7 @@ import io
 import math
 import struct
 import wave
+import asyncio
 from dataclasses import dataclass
 
 import httpx
@@ -50,7 +51,7 @@ _EMOTION_SPEED = {
 class FishAudioService:
     """Generate Japanese speech without running a local voice model."""
 
-    def __init__(self) -> None:
+    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
         self.api_url = f"{settings.FISH_API_BASE_URL.rstrip('/')}/v1/tts"
         self.api_key = settings.FISH_API_KEY.strip()
         self.model = settings.FISH_MODEL.strip()
@@ -58,9 +59,12 @@ class FishAudioService:
         self.audio_format = settings.FISH_AUDIO_FORMAT.lower().strip()
         self.latency = settings.FISH_LATENCY.lower().strip()
         self.timeout = settings.FISH_TIMEOUT
+        self.retry_attempts = settings.FISH_RETRY_ATTEMPTS
         self.temperature = settings.FISH_TEMPERATURE
         self.top_p = settings.FISH_TOP_P
         self.use_emotion_tags = settings.FISH_EMOTION_TAGS
+        self._client = client
+        self._owns_client = client is None
 
         if self.audio_format not in _MEDIA_TYPES:
             raise ValueError(
@@ -83,8 +87,11 @@ class FishAudioService:
         return self.is_configured()
 
     async def synthesize(self, text: str, emotion: str = "neutral") -> AudioPayload:
-        if not text.strip():
+        text = text.strip()
+        if not text:
             raise ValueError("Fish Audio requires non-empty text")
+        if len(text) > settings.FISH_MAX_TEXT_LENGTH:
+            raise ValueError("Fish Audio text exceeds configured limit")
         if not self.is_configured():
             raise RuntimeError(
                 "Fish Audio is not configured. Set FISH_API_KEY and "
@@ -116,12 +123,51 @@ class FishAudioService:
         }
 
         timeout = httpx.Timeout(self.timeout, connect=min(self.timeout, 10.0))
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(self.api_url, headers=headers, json=request_body)
-            response.raise_for_status()
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=timeout,
+                limits=httpx.Limits(max_connections=4, max_keepalive_connections=2),
+            )
+
+        response = None
+        for attempt in range(self.retry_attempts):
+            try:
+                response = await self._client.post(
+                    self.api_url, headers=headers, json=request_body
+                )
+                status_code = getattr(response, "status_code", 200)
+                retryable = status_code == 429 or status_code >= 500
+                if not retryable:
+                    response.raise_for_status()
+                    break
+                if attempt == self.retry_attempts - 1:
+                    response.raise_for_status()
+                retry_after = response.headers.get("retry-after", "") if hasattr(response, "headers") else ""
+                try:
+                    delay = min(float(retry_after), 8.0) if retry_after else 0.25 * (2**attempt)
+                except ValueError:
+                    delay = 0.25 * (2**attempt)
+                await asyncio.sleep(delay)
+            except (httpx.TimeoutException, httpx.NetworkError):
+                if attempt == self.retry_attempts - 1:
+                    raise RuntimeError("Fish Audio timeout hoặc lỗi mạng")
+                await asyncio.sleep(0.25 * (2**attempt))
+
+        if response is None:
+            raise RuntimeError("Fish Audio không trả response")
 
         if not response.content:
             raise RuntimeError("Fish Audio returned an empty audio response")
+        if len(response.content) > settings.MAX_AUDIO_BYTES:
+            raise RuntimeError("Fish Audio response exceeds configured limit")
+        content_type = response.headers.get("content-type", "") if hasattr(response, "headers") else ""
+        if content_type and not (
+            content_type.startswith(self.media_type)
+            or content_type.startswith("application/octet-stream")
+        ):
+            raise RuntimeError("Fish Audio returned an unexpected content type")
+        if self.audio_format == "wav" and not response.content[:4] in {b"RIFF", b"RF64"}:
+            raise RuntimeError("Fish Audio did not return a WAV payload")
 
         logger.info(
             "Fish Audio OK: %d bytes (model=%s, format=%s, emotion=%s)",
@@ -135,6 +181,11 @@ class FishAudioService:
             extension=self.audio_format,
             media_type=self.media_type,
         )
+
+    async def close(self) -> None:
+        if self._client is not None and hasattr(self._client, "aclose"):
+            await self._client.aclose()
+        self._client = None
 
     @staticmethod
     def mock_wav() -> AudioPayload:

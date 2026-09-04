@@ -16,16 +16,16 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          settingsRepositoryProvider.overrideWithValue(repo),
-        ],
+        overrides: [settingsRepositoryProvider.overrideWithValue(repo)],
         child: const MikuApp(),
       ),
     );
 
-    // Màn hình chính hiển thị tiêu đề.
-    expect(find.text('Miku Japanese Conversation'), findsOneWidget);
-    expect(find.text('Bắt đầu hội thoại'), findsOneWidget);
-    expect(find.text('Sổ từ vựng'), findsOneWidget);
+    // Màn hình chính ưu tiên hành động luyện nói và không lộ thuật ngữ nội bộ.
+    expect(find.text('MIKU'), findsOneWidget);
+    expect(find.text('Luyện ngay'), findsOneWidget);
+    expect(find.text('Không gian học tập'), findsOneWidget);
+    expect(find.text('Từ vựng'), findsOneWidget);
+    expect(find.textContaining('Phase'), findsNothing);
   });
 }

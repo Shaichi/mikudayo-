@@ -12,16 +12,22 @@ def upsert_vocab(item: VocabItem) -> int:
     from datetime import datetime, timezone
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    with get_conn() as conn:
+    with get_conn(immediate=True) as conn:
         row = conn.execute("SELECT id FROM vocabulary WHERE word=?", (item.word,)).fetchone()
         if row:
             conn.execute(
-                "UPDATE vocabulary SET review_count = review_count + 1, reading=?, meaning_vi=? WHERE id=?",
+                """UPDATE vocabulary
+                   SET review_count = review_count + 1,
+                       reading=COALESCE(NULLIF(?, ''), reading),
+                       meaning_vi=COALESCE(NULLIF(?, ''), meaning_vi)
+                   WHERE id=?""",
                 (item.reading, item.meaning_vi, row["id"]),
             )
             return row["id"]
         cur = conn.execute(
-            "INSERT INTO vocabulary (word, reading, meaning_vi, first_seen_at) VALUES (?,?,?,?)",
+            """INSERT INTO vocabulary
+               (word, reading, meaning_vi, first_seen_at, review_count)
+               VALUES (?,?,?,?,1)""",
             (item.word, item.reading, item.meaning_vi, now),
         )
         return int(cur.lastrowid)
@@ -35,10 +41,12 @@ def link_turn_vocab(turn_id: str, vocab_id: int) -> None:
         )
 
 
-def list_vocab() -> list[dict]:
+def list_vocab(limit: int | None = None, offset: int = 0) -> list[dict]:
+    limit = max(1, min(limit or 1000, 2000))
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM vocabulary ORDER BY first_seen_at DESC"
+            "SELECT * FROM vocabulary ORDER BY first_seen_at DESC LIMIT ? OFFSET ?",
+            (limit, max(0, offset)),
         ).fetchall()
     return [dict(r) for r in rows]
 
