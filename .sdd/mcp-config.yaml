@@ -1,0 +1,4 @@
+# MCP config cho SDD toolchain — placeholder.
+# Sẽ được bổ sung khi Human Director chốt toolchain (tavily, postgres, redis, ...).
+# Hiện chưa có binding nào được chọn; giữ file rỗng để adoption không tự bind.
+mcp_servers: {}
