@@ -59,6 +59,12 @@ Return ONE JSON object matching the schema. Every field must be filled:
 - Conversation summary: {summary}
 - Recent turns:
 {recent_turns}
+
+# Vocabulary reinforcement targets
+{candidate_vocab_section}
+
+# Grounding Knowledge (Grammar references for correction mode)
+{grounding_section}
 """
 
 SCHEMA_JSON = {
@@ -182,17 +188,53 @@ class GeminiService:
         summary: str,
         recent_turns: list[dict],
         scenario: str = "",
+        candidate_vocab: list[dict] | None = None,
+        grounding_chunks: list[dict] | None = None,
     ) -> str:
         turns_text = "\n".join(
             f"User: {t.get('transcript_ja') or ''}\nMiku: {t.get('reply_ja') or ''}"
             for t in recent_turns[-settings.GEMINI_MAX_TURNS:]
         ) or "（初めての会話）"
+
+        if candidate_vocab:
+            items_str = "\n".join(
+                f"- {item.get('word', '')} ({item.get('reading', '')}): {item.get('meaning_vi', '')}"
+                for item in candidate_vocab
+                if item.get("word")
+            )
+            candidate_section = (
+                "The learner is currently practicing these words:\n"
+                f"{items_str}\n"
+                "If it fits naturally into the conversation, try to use 1 or 2 of these words in your reply_ja "
+                "and include them in the 'vocabulary' output. Do not force them if irrelevant."
+            )
+        else:
+            candidate_section = "（なし）"
+
+        if mode == "correction" and grounding_chunks:
+            chunks_str = "\n\n".join(
+                f"[Ref: {c.get('title', '')} (JLPT {c.get('jlpt_level', '')})]\n{c.get('chunk_text', '')}"
+                for c in grounding_chunks
+            )
+            grounding_section = (
+                "Authoritative grammar references for this turn:\n"
+                f"{chunks_str}\n\n"
+                "CRITICAL CORRECTION RULE:\n"
+                "1. You SHALL only correct the user's sentence IF it explicitly violates one of the rules or anti-patterns in the references above.\n"
+                "2. If the user's sentence is correct, OR if no reference above confirms an error, you MUST set 'correction_ja': null and 'explanation_vi': null.\n"
+                "3. Do NOT guess or hallucinate any grammar rule outside the provided references."
+            )
+        else:
+            grounding_section = "（なし）"
+
         return SYSTEM_PROMPT_TEMPLATE.format(
             mode=mode,
             jlpt_level=level,
             summary=summary or "（まだ要約なし）",
             scenario=scenario or "（không có）",
             recent_turns=turns_text,
+            candidate_vocab_section=candidate_section,
+            grounding_section=grounding_section,
         )
 
     def generate_turn(
@@ -203,6 +245,8 @@ class GeminiService:
         summary: str,
         recent_turns: list[dict],
         scenario: str = "",
+        candidate_vocab: list[dict] | None = None,
+        grounding_chunks: list[dict] | None = None,
     ) -> GeminiTurnOutput:
         """Gọi Gemini bằng transcript text và trả structured output."""
         if self._mock:
@@ -217,11 +261,16 @@ class GeminiService:
             contents = types.UserContent(parts=[types.Part(text=user_text)])
             schema = SCHEMA_JSON
 
+            # Giảm temperature khi có grounding sửa lỗi để model bám sát tài liệu
+            temp = 0.2 if (mode == "correction" and grounding_chunks) else settings.GEMINI_TEMPERATURE
+
             gen_config = types.GenerateContentConfig(
-                system_instruction=self.build_prompt(mode, level, summary, recent_turns, scenario),
+                system_instruction=self.build_prompt(
+                    mode, level, summary, recent_turns, scenario, candidate_vocab, grounding_chunks
+                ),
                 response_mime_type="application/json",
                 response_schema=schema,
-                temperature=settings.GEMINI_TEMPERATURE,
+                temperature=temp,
             )
             # Gemini Thinking: bật khi GEMINI_THINKING != "" (minimal/low/medium/high).
             # Model 3.5-flash-lite hỗ trợ thinking; đã verify JSON schema không vỡ.

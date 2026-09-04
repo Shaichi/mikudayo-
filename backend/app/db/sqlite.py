@@ -45,7 +45,9 @@ CREATE TABLE IF NOT EXISTS vocabulary (
     word          TEXT NOT NULL,
     reading       TEXT,
     meaning_vi    TEXT,
+    jlpt_level    TEXT NOT NULL DEFAULT 'N5',
     first_seen_at TEXT NOT NULL,
+    last_seen_at  TEXT,
     review_count  INTEGER NOT NULL DEFAULT 1
 );
 
@@ -59,7 +61,28 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS grammar_chunks (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    source        TEXT NOT NULL DEFAULT 'curated',
+    jlpt_level    TEXT NOT NULL DEFAULT 'N5',
+    title         TEXT NOT NULL,
+    chunk_text    TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
 """
+
+
+def _load_vec_extension(conn: sqlite3.Connection) -> bool:
+    try:
+        import sqlite_vec
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        return True
+    except Exception as exc:
+        logger.debug("sqlite-vec extension load failed or not available: %s", exc)
+        return False
 
 
 def _connect() -> sqlite3.Connection:
@@ -76,6 +99,7 @@ def _connect() -> sqlite3.Connection:
     conn.execute(
         f"PRAGMA busy_timeout = {max(1000, int(settings.DB_TIMEOUT_SECONDS * 1000))}"
     )
+    _load_vec_extension(conn)
     return conn
 
 
@@ -98,10 +122,20 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # Old databases used 0 for a first vocabulary encounter.  Preserve all
     # rows while correcting only that impossible initial value.
     conn.execute("UPDATE vocabulary SET review_count = 1 WHERE review_count < 1")
+
+    vocab_cols = _columns(conn, "vocabulary")
+    if "jlpt_level" not in vocab_cols:
+        conn.execute("ALTER TABLE vocabulary ADD COLUMN jlpt_level TEXT NOT NULL DEFAULT 'N5'")
+    if "last_seen_at" not in vocab_cols:
+        conn.execute("ALTER TABLE vocabulary ADD COLUMN last_seen_at TEXT")
+
     conn.execute("CREATE INDEX IF NOT EXISTS idx_turns_session_created ON turns(session_id, created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vocabulary_word ON vocabulary(word)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vocabulary_review ON vocabulary(review_count, jlpt_level)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_turns_request_id ON turns(client_request_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_grammar_level ON grammar_chunks(jlpt_level)")
+
     try:
         conn.execute(
             """CREATE UNIQUE INDEX IF NOT EXISTS idx_turns_request_unique
@@ -111,6 +145,25 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # A legacy DB may contain duplicate keys from before idempotency was
         # introduced.  Keep it usable; new writes are still serialized.
         logger.warning("Bỏ qua unique index request_id vì DB cũ có dữ liệu trùng.")
+
+    try:
+        conn.execute(
+            f"""CREATE VIRTUAL TABLE IF NOT EXISTS vec_grammar_chunks USING vec0(
+                chunk_id INTEGER PRIMARY KEY,
+                embedding float[{settings.RAG_EMBEDDING_DIM}] distance_metric=cosine
+            )"""
+        )
+    except Exception as exc:
+        logger.debug("Bỏ qua tạo vec_grammar_chunks nếu sqlite-vec không sẵn sàng: %s", exc)
+
+
+def is_vec_available() -> bool:
+    try:
+        with get_conn() as conn:
+            row = conn.execute("SELECT vec_version()").fetchone()
+            return bool(row)
+    except Exception:
+        return False
 
 
 def init_db() -> None:

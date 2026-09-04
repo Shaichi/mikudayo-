@@ -23,6 +23,7 @@ from starlette.concurrency import run_in_threadpool
 from ..core.config import settings
 from ..core.logging import get_logger
 from ..repositories import conversation_repository as conv_repo
+from ..repositories import vocab_repository as vocab_repo
 from ..schemas.conversation import (
     AudioGenerationStatus,
     ConversationResult,
@@ -30,6 +31,7 @@ from ..schemas.conversation import (
     Mode,
 )
 from ..services.gemini_service import GeminiService
+from ..services.rag_grammar_service import RagGrammarService
 from ..services.fish_audio_service import (
     AudioPayload,
     FishAudioService,
@@ -43,6 +45,7 @@ logger = get_logger("api.conversation")
 router = APIRouter()
 
 _gemini = GeminiService()
+_rag_grammar = RagGrammarService()
 _fish_audio = FishAudioService()
 _audio_slots = asyncio.Semaphore(settings.AUDIO_MAX_CONCURRENCY)
 
@@ -226,6 +229,30 @@ async def conversation_turn(
     summary = (session or {}).get("summary") or ""
     recent = conv_repo.get_recent_turns(sid, settings.GEMINI_MAX_TURNS) if sid else []
 
+    candidates = []
+    if settings.VOCAB_REINFORCEMENT_ENABLED:
+        try:
+            candidates = vocab_repo.get_reinforcement_candidates(
+                level=effective_level,
+                limit=settings.VOCAB_REINFORCEMENT_LIMIT,
+                max_review=settings.VOCAB_REINFORCEMENT_THRESHOLD,
+            )
+        except Exception as exc:
+            logger.warning("Không lấy được từ vựng cần ôn tập: %s", exc)
+
+    grounding_chunks = []
+    if effective_mode == "correction" and settings.RAG_GRAMMAR_ENABLED:
+        try:
+            t_rag = time.perf_counter()
+            grounding_chunks = await run_in_threadpool(
+                _rag_grammar.retrieve_grounding_chunks,
+                user_text,
+                effective_level,
+            )
+            timing["rag_ms"] = int((time.perf_counter() - t_rag) * 1000)
+        except Exception as exc:
+            logger.warning("Không lấy được grammar grounding: %s", exc)
+
     # --- Gemini (text only) ---
     t0 = time.perf_counter()
     try:
@@ -237,6 +264,8 @@ async def conversation_turn(
             summary,
             recent,
             effective_scenario,
+            candidates,
+            grounding_chunks,
         )
     except ValidationError:
         raise HTTPException(502, "Gemini trả JSON không đúng schema.")

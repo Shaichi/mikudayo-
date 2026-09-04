@@ -70,6 +70,19 @@ class Settings:
     # Chỉ tốn thời gian tính toán, KHÔNG tốn phí/thêm quota.
     GEMINI_THINKING: str = _env("GEMINI_THINKING", "minimal")
 
+    # --- Vocabulary Reinforcement ---
+    VOCAB_REINFORCEMENT_ENABLED: bool = _bool_env("VOCAB_REINFORCEMENT_ENABLED", True)
+    VOCAB_REINFORCEMENT_LIMIT: int = _int_env("VOCAB_REINFORCEMENT_LIMIT", 5, 1, 20)
+    VOCAB_REINFORCEMENT_THRESHOLD: int = _int_env("VOCAB_REINFORCEMENT_THRESHOLD", 3, 1, 10)
+
+    # --- RAG Grammar Grounding ---
+    RAG_GRAMMAR_ENABLED: bool = _bool_env("RAG_GRAMMAR_ENABLED", True)
+    RAG_EMBEDDING_MODEL: str = _env("RAG_EMBEDDING_MODEL", "gemini-embedding-001")
+    RAG_EMBEDDING_DIM: int = _int_env("RAG_EMBEDDING_DIM", 768, 128, 3072)
+    RAG_SIMILARITY_THRESHOLD: float = _float_env("RAG_SIMILARITY_THRESHOLD", 0.70, 0.0, 1.0)
+    RAG_TIMEOUT_SECONDS: float = _float_env("RAG_TIMEOUT_SECONDS", 0.20, 0.05, 5.0)
+    RAG_TOP_K: int = _int_env("RAG_TOP_K", 3, 1, 10)
+
     # --- Fish Audio online TTS ---
     FISH_API_BASE_URL: str = _env("FISH_API_BASE_URL", "https://api.fish.audio")
     FISH_API_KEY: str = _env("FISH_API_KEY", "")
