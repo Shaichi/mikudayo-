@@ -36,13 +36,10 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.6.0
   flutter_riverpod: ^2.6.1
-  path_provider: ^2.1.6
   shared_preferences: ^2.5.5
-  record: ^6.2.1
+  speech_to_text: ^7.4.0
   just_audio: ^0.10.6
-  http_parser: ^4.1.2
   webview_flutter: ^4.14.1
-  webview_windows: ^0.4.0
 
 dev_dependencies:
   flutter_test:
@@ -65,6 +62,14 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Lưu ý: Flutter asset bundling KHÔNG recurse subdir → khai báo cả dir con.
+  assets:
+    # Avatar Live2D (xem assets/web/live2d/README.md). model/ không được commit.
+    - assets/web/live2d/
+    - assets/web/live2d/lib/
+    - assets/web/live2d/model/
+    - assets/web/live2d/model/RetrynowMiku.4096/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

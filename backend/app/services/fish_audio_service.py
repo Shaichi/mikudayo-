@@ -1,0 +1,263 @@
+"""Online text-to-speech through the Fish Audio API."""
+from __future__ import annotations
+
+import io
+import math
+import struct
+import wave
+import asyncio
+from dataclasses import dataclass
+
+import httpx
+
+from ..core.config import settings
+from ..core.logging import get_logger
+
+logger = get_logger("fish_audio")
+
+
+@dataclass(frozen=True)
+class AudioPayload:
+    data: bytes
+    extension: str
+    media_type: str
+
+
+_MEDIA_TYPES = {
+    "wav": "audio/wav",
+    "mp3": "audio/mpeg",
+    "opus": "audio/ogg",
+    "pcm": "application/octet-stream",
+}
+
+_EMOTION_TAGS = {
+    "happy": "[happy]",
+    "excited": "[excited]",
+    "thinking": "[calm]",
+    "embarrassed": "[shy]",
+    "sad": "[sad]",
+}
+
+_EMOTION_SPEED = {
+    "neutral": 1.0,
+    "happy": 1.05,
+    "excited": 1.10,
+    "thinking": 0.94,
+    "embarrassed": 0.98,
+    "sad": 0.90,
+}
+
+
+class FishAudioService:
+    """Generate Japanese speech without running a local voice model."""
+
+    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
+        self.api_url = f"{settings.FISH_API_BASE_URL.rstrip('/')}/v1/tts"
+        self.api_key = settings.FISH_API_KEY.strip()
+        self.model = settings.FISH_MODEL.strip()
+        self.reference_id = settings.FISH_REFERENCE_ID.strip()
+        self.audio_format = settings.FISH_AUDIO_FORMAT.lower().strip()
+        self.latency = settings.FISH_LATENCY.lower().strip()
+        self.sample_rate = settings.FISH_SAMPLE_RATE
+        self.timeout = settings.FISH_TIMEOUT
+        self.retry_attempts = settings.FISH_RETRY_ATTEMPTS
+        self.temperature = settings.FISH_TEMPERATURE
+        self.top_p = settings.FISH_TOP_P
+        self.use_emotion_tags = settings.FISH_EMOTION_TAGS
+        self._client = client
+        self._owns_client = client is None
+
+        if self.audio_format not in _MEDIA_TYPES:
+            raise ValueError(
+                "FISH_AUDIO_FORMAT must be wav, mp3, opus, or pcm"
+            )
+        if self.latency not in {"normal", "balanced", "low"}:
+            raise ValueError(
+                "FISH_LATENCY must be normal, balanced, or low"
+            )
+
+    @property
+    def media_type(self) -> str:
+        return _MEDIA_TYPES[self.audio_format]
+
+    def is_configured(self) -> bool:
+        """Do not spend TTS quota for /health; verify required credentials only."""
+        return bool(self.api_key and self.model and self.reference_id)
+
+    def check_health(self) -> bool:
+        return self.is_configured()
+
+    async def synthesize(self, text: str, emotion: str = "neutral") -> AudioPayload:
+        text = text.strip()
+        if not text:
+            raise ValueError("Fish Audio requires non-empty text")
+        if len(text) > settings.FISH_MAX_TEXT_LENGTH:
+            raise ValueError("Fish Audio text exceeds configured limit")
+        if not self.is_configured():
+            raise RuntimeError(
+                "Fish Audio is not configured. Set FISH_API_KEY and "
+                "FISH_REFERENCE_ID in backend/.env."
+            )
+
+        normalized_emotion = emotion if emotion in _EMOTION_SPEED else "neutral"
+        spoken_text = text.strip()
+        tag = _EMOTION_TAGS.get(normalized_emotion) if self.use_emotion_tags else None
+        if tag:
+            spoken_text = f"{tag} {spoken_text}"
+
+        request_body = {
+            "text": spoken_text,
+            "reference_id": self.reference_id,
+            "format": self.audio_format,
+            "latency": self.latency,
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "prosody": {
+                "speed": _EMOTION_SPEED[normalized_emotion],
+                "volume": 0,
+            },
+        }
+        if self.sample_rate:
+            request_body["sample_rate"] = self.sample_rate
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "model": self.model,
+        }
+
+        timeout = httpx.Timeout(self.timeout, connect=min(self.timeout, 10.0))
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=timeout,
+                limits=httpx.Limits(max_connections=4, max_keepalive_connections=2),
+            )
+
+        response = None
+        for attempt in range(self.retry_attempts):
+            try:
+                response = await self._client.post(
+                    self.api_url, headers=headers, json=request_body
+                )
+                status_code = getattr(response, "status_code", 200)
+                retryable = status_code == 429 or status_code >= 500
+                if not retryable:
+                    response.raise_for_status()
+                    break
+                if attempt == self.retry_attempts - 1:
+                    response.raise_for_status()
+                retry_after = response.headers.get("retry-after", "") if hasattr(response, "headers") else ""
+                try:
+                    delay = min(float(retry_after), 8.0) if retry_after else 0.25 * (2**attempt)
+                except ValueError:
+                    delay = 0.25 * (2**attempt)
+                await asyncio.sleep(delay)
+            except (httpx.TimeoutException, httpx.NetworkError):
+                if attempt == self.retry_attempts - 1:
+                    raise RuntimeError("Fish Audio timeout hoặc lỗi mạng")
+                await asyncio.sleep(0.25 * (2**attempt))
+
+        if response is None:
+            raise RuntimeError("Fish Audio không trả response")
+
+        if not response.content:
+            raise RuntimeError("Fish Audio returned an empty audio response")
+        if len(response.content) > settings.MAX_AUDIO_BYTES:
+            raise RuntimeError("Fish Audio response exceeds configured limit")
+        content_type = response.headers.get("content-type", "") if hasattr(response, "headers") else ""
+        if content_type and not (
+            content_type.startswith(self.media_type)
+            or content_type.startswith("application/octet-stream")
+        ):
+            raise RuntimeError("Fish Audio returned an unexpected content type")
+        if self.audio_format == "wav" and not response.content[:4] in {b"RIFF", b"RF64"}:
+            raise RuntimeError("Fish Audio did not return a WAV payload")
+
+        logger.info(
+            "Fish Audio OK: %d bytes (model=%s, format=%s, emotion=%s)",
+            len(response.content),
+            self.model,
+            self.audio_format,
+            normalized_emotion,
+        )
+        return AudioPayload(
+            data=response.content,
+            extension=self.audio_format,
+            media_type=self.media_type,
+        )
+
+    async def close(self) -> None:
+        if self._client is not None and hasattr(self._client, "aclose"):
+            await self._client.aclose()
+        self._client = None
+
+    @staticmethod
+    def mock_wav() -> AudioPayload:
+        return AudioPayload(_mock_wav(), "wav", "audio/wav")
+
+
+def media_type_for_extension(extension: str) -> str:
+    return _MEDIA_TYPES.get(extension.lower().lstrip("."), "application/octet-stream")
+
+
+def add_wav_preroll(audio: AudioPayload, duration_ms: int) -> AudioPayload:
+    """Prepend PCM silence so Android audio-focus fade-in cannot eat speech."""
+    if audio.extension != "wav" or duration_ms <= 0:
+        return audio
+
+    try:
+        with wave.open(io.BytesIO(audio.data), "rb") as source:
+            channels = source.getnchannels()
+            sample_width = source.getsampwidth()
+            sample_rate = source.getframerate()
+            compression = source.getcomptype()
+            compression_name = source.getcompname()
+            frames = source.readframes(source.getnframes())
+
+        silence_frames = max(0, round(sample_rate * duration_ms / 1000))
+        silence = bytes(silence_frames * channels * sample_width)
+        output = io.BytesIO()
+        with wave.open(output, "wb") as target:
+            target.setnchannels(channels)
+            target.setsampwidth(sample_width)
+            target.setframerate(sample_rate)
+            target.setcomptype(compression, compression_name)
+            target.writeframes(silence + frames)
+        return AudioPayload(output.getvalue(), audio.extension, audio.media_type)
+    except (EOFError, wave.Error) as exc:
+        logger.warning("Cannot add WAV preroll: %s", exc)
+        return audio
+
+
+def _mock_wav() -> bytes:
+    """Generate a short WAV tone for UI development without spending API quota."""
+    sample_rate = 16000
+    duration = 0.8
+    frame_count = int(sample_rate * duration)
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        samples = bytearray(frame_count * 2)
+        for index in range(frame_count):
+            seconds = index / sample_rate
+            envelope = min(1.0, seconds * 20, (duration - seconds) * 20)
+            value = int(
+                8000
+                * envelope
+                * (
+                    0.8 * math.sin(2 * math.pi * 440 * seconds)
+                    + 0.2 * math.sin(2 * math.pi * 880 * seconds)
+                )
+            )
+            struct.pack_into("<h", samples, index * 2, max(-32768, min(32767, value)))
+        wav_file.writeframes(bytes(samples))
+    return buffer.getvalue()
+
+
+__all__ = [
+    "AudioPayload",
+    "FishAudioService",
+    "add_wav_preroll",
+    "media_type_for_extension",
+]

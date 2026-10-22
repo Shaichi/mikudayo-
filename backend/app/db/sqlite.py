@@ -1,6 +1,8 @@
-"""Kết nối SQLite và schema tối thiểu theo tài liệu.
+"""SQLite connection, schema and small additive migrations.
 
-Tables: sessions, turns, vocabulary, turn_vocabulary, settings.
+The application keeps one short-lived connection per operation.  WAL mode,
+busy_timeout and explicit rollback make this safe enough for the current
+single-service deployment while keeping the repository easy to test.
 """
 from __future__ import annotations
 
@@ -24,15 +26,18 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE TABLE IF NOT EXISTS turns (
-    id             TEXT PRIMARY KEY,
-    session_id     TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    transcript_ja  TEXT,
-    reply_ja       TEXT NOT NULL,
-    correction_ja  TEXT,
-    explanation_vi TEXT,
-    emotion        TEXT NOT NULL DEFAULT 'neutral',
-    audio_path     TEXT,
-    created_at     TEXT NOT NULL
+    id                TEXT PRIMARY KEY,
+    session_id        TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    transcript_ja     TEXT,
+    reply_ja          TEXT NOT NULL,
+    correction_ja     TEXT,
+    explanation_vi    TEXT,
+    emotion           TEXT NOT NULL DEFAULT 'neutral',
+    gesture           TEXT NOT NULL DEFAULT 'none',
+    difficulty        TEXT NOT NULL DEFAULT 'N5',
+    audio_path        TEXT,
+    client_request_id TEXT UNIQUE,
+    created_at        TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS vocabulary (
@@ -40,8 +45,10 @@ CREATE TABLE IF NOT EXISTS vocabulary (
     word          TEXT NOT NULL,
     reading       TEXT,
     meaning_vi    TEXT,
+    jlpt_level    TEXT NOT NULL DEFAULT 'N5',
     first_seen_at TEXT NOT NULL,
-    review_count  INTEGER NOT NULL DEFAULT 0
+    last_seen_at  TEXT,
+    review_count  INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS turn_vocabulary (
@@ -54,21 +61,116 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS grammar_chunks (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    source        TEXT NOT NULL DEFAULT 'curated',
+    jlpt_level    TEXT NOT NULL DEFAULT 'N5',
+    title         TEXT NOT NULL,
+    chunk_text    TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
 """
+
+
+def _load_vec_extension(conn: sqlite3.Connection) -> bool:
+    try:
+        import sqlite_vec
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        return True
+    except Exception as exc:
+        logger.debug("sqlite-vec extension load failed or not available: %s", exc)
+        return False
 
 
 def _connect() -> sqlite3.Connection:
     settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(settings.DB_PATH)
+    conn = sqlite3.connect(
+        settings.DB_PATH,
+        timeout=settings.DB_TIMEOUT_SECONDS,
+        check_same_thread=False,
+    )
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute(
+        f"PRAGMA busy_timeout = {max(1000, int(settings.DB_TIMEOUT_SECONDS * 1000))}"
+    )
+    _load_vec_extension(conn)
     return conn
+
+
+def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply only additive, restart-safe migrations to existing databases."""
+    columns = _columns(conn, "turns")
+    additions = {
+        "gesture": "TEXT NOT NULL DEFAULT 'none'",
+        "difficulty": "TEXT NOT NULL DEFAULT 'N5'",
+        "client_request_id": "TEXT",
+    }
+    for name, declaration in additions.items():
+        if name not in columns:
+            conn.execute(f"ALTER TABLE turns ADD COLUMN {name} {declaration}")
+
+    # Old databases used 0 for a first vocabulary encounter.  Preserve all
+    # rows while correcting only that impossible initial value.
+    conn.execute("UPDATE vocabulary SET review_count = 1 WHERE review_count < 1")
+
+    vocab_cols = _columns(conn, "vocabulary")
+    if "jlpt_level" not in vocab_cols:
+        conn.execute("ALTER TABLE vocabulary ADD COLUMN jlpt_level TEXT NOT NULL DEFAULT 'N5'")
+    if "last_seen_at" not in vocab_cols:
+        conn.execute("ALTER TABLE vocabulary ADD COLUMN last_seen_at TEXT")
+
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_turns_session_created ON turns(session_id, created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vocabulary_word ON vocabulary(word)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vocabulary_review ON vocabulary(review_count, jlpt_level)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_turns_request_id ON turns(client_request_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_grammar_level ON grammar_chunks(jlpt_level)")
+
+    try:
+        conn.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_turns_request_unique
+               ON turns(client_request_id) WHERE client_request_id IS NOT NULL"""
+        )
+    except sqlite3.IntegrityError:
+        # A legacy DB may contain duplicate keys from before idempotency was
+        # introduced.  Keep it usable; new writes are still serialized.
+        logger.warning("Bỏ qua unique index request_id vì DB cũ có dữ liệu trùng.")
+
+    try:
+        conn.execute(
+            f"""CREATE VIRTUAL TABLE IF NOT EXISTS vec_grammar_chunks USING vec0(
+                chunk_id INTEGER PRIMARY KEY,
+                embedding float[{settings.RAG_EMBEDDING_DIM}] distance_metric=cosine
+            )"""
+        )
+    except Exception as exc:
+        logger.debug("Bỏ qua tạo vec_grammar_chunks nếu sqlite-vec không sẵn sàng: %s", exc)
+
+
+def is_vec_available() -> bool:
+    try:
+        with get_conn() as conn:
+            row = conn.execute("SELECT vec_version()").fetchone()
+            return bool(row)
+    except Exception:
+        return False
 
 
 def init_db() -> None:
     conn = _connect()
     try:
         conn.executescript(_SCHEMA)
+        _migrate(conn)
         conn.commit()
         logger.info("DB ready at %s", settings.DB_PATH)
     finally:
@@ -76,15 +178,20 @@ def init_db() -> None:
 
 
 @contextmanager
-def get_conn() -> Iterator[sqlite3.Connection]:
+def get_conn(*, immediate: bool = False) -> Iterator[sqlite3.Connection]:
     conn = _connect()
     try:
+        if immediate:
+            conn.execute("BEGIN IMMEDIATE")
         yield conn
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
 
 def close_db() -> None:
-    # SQLite không cần đóng global connection; hàm giữ cho API ổn định.
+    # Connections are intentionally scoped to repository operations.
     pass

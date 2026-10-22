@@ -48,18 +48,20 @@ app.*.map.json
 backend/.env
 backend/data/
 backend/temp/
+# Di sản local TTS/RVC có thể còn trên máy nhưng không còn được ứng dụng dùng.
+backend/.venv-rvc/
+backend/models/
 __pycache__/
 *.pyc
 *.wav
 .claude/
 
-# VRM model gốc (thư mục tải về) — không đẩy bản gốc .vroid/.vrm, chỉ đẩy bản
-# đã dùng trong web/vrm-model/ (xem HANDOFF.md, mục License).
-茶味式　初音ミク/
-assets/vrm/
+# Local Android build và ảnh/log smoke-test.
+/android/build/
+/android-window.xml
+/runlog.txt
+/screen*.png
+/smoke-*/
 
-# Backend RVC (Phase 4)
-# - .venv-rvc: môi trường Python 3.10 riêng cho RVC (fairseq)
-# - models/: model giọng Miku (.pth/.index) tải từ HuggingFace — nặng, không commit
-backend/.venv-rvc/
-backend/models/
+# Live2D: model fan-made chỉ dùng cá nhân, điều khoản cấm phân phối lại → không commit.
+/assets/web/live2d/model/

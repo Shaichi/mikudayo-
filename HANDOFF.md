@@ -1,265 +1,481 @@
-# BÀN GIAO — Miku Japanese Conversation (Flutter + Gemini + VOICEVOX + RVC + Live2D)
+# PROJECT STATUS / HANDOFF FOR GLM 5.2
 
-> **Trạng thái:** Phiên 2 (2026-08-12) đã hoàn thành **Phase 0 → Phase 5** +
-> scaffold **Phase 6 (research)**. Cả 3 engine thật (Gemini/VOICEVOX/RVC) đã
-> verify end-to-end — `voice_mode:"rvc"`, giọng Miku thật. Đã push lên GitHub
-> `Shaichi/mikudayo-` (branch main).
-> Tài liệu gốc: `Tai_lieu_du_an_Miku_Japanese_Conversation_Flutter (1).docx`.
+> **Nguồn sự thật hiện tại của dự án — cập nhật ngày 2026-08-16.**
+> Hãy đọc toàn bộ file này trước khi sửa code. `HANDOFF.md`, `README.md` và một số comment cũ có thể chưa phản ánh hết trạng thái mới nhất.
 
----
+## 1. Mục tiêu sản phẩm
 
-## 0. TÍCH HỢP VRM 3D (mới — Phiên 3)
+Đây là ứng dụng Flutter luyện hội thoại tiếng Nhật với nhân vật Miku 3D. Luồng chính trên Android:
 
-> **Trạng thái:** Model Miku 3D thật (VRM 1.0) render trong app qua
-> WebView2 + three.js. VERIFIED — model load, emotion + lip-sync + blink hoạt động.
-
-### 0.1 Cách hoạt động
-- `web/vrm/index.html` — trang renderer dùng `three.js` + `@pixiv/three-vrm`
-  (CDN qua importmap). Load model từ `web/vrm-model/`.
-- `web/vrm-model/茶味式　初音ミク vrm 1.0.vrm` — model thật (26MB) được Flutter map
-  thành host `app.local` qua `addVirtualHostNameMapping` (WebView2 Windows).
-- `lib/avatar/vrm_avatar.dart` — widget `VrmAvatar` (ConsumerStatefulWidget): khởi
-  tạo WebviewController, listen `webMessage` cho `{type:'loaded'}`, watch
-  `avatarControllerProvider` và `postWebMessage` emotion/mouth lên JS.
-- UI: `conversation_screen.dart` `_Header` dùng `VrmAvatar` thay `MikuAvatar`(emoji).
-
-### 0.2 Xử lý emotion + lip-sync (JS trong index.html)
-- **Emotion**: `applyEmotion(emo)` map `MikuEmotion` → preset VRM
-  (neutral/happy/excited/thinking/embarrassed/sad → neutral/happy/happy/relaxed/happy/sad),
-  reset preset cũ, set preset mới = 1.
-- **Lip-sync**: `mouth` → `targetMouth` → nội suy → `expressionManager.setValue('aa', ...)`.
-- **Blink**: timer 3s set `blink` 1 rồi 0.
-
-### 0.3 Gotcha quan trọng (đã chạy thật)
-- **Không dùng `import` URL trực tiếp** cho CDN trong ESM — WebView2 Virtual Host
-  Mapping origin chặn direct-URL ESM import (script không chạy). **Phải dùng importmap**.
-- Bug từng gặp: `new THREE.GLTFLoader()` sai (GLTFLoader không nằm trong THREE
-  namespace) → đúng `new GLTFLoader()` (import riêng từ `three/addons/loaders/`).
-- `addVirtualHostNameMapping` phải gọi SAU `initialize()` (dùng `_methodChannel` late).
-
-### 0.4 License model — KHÔNG được phân phối bản gốc
-- Model `茶味式　初音ミク` (author: nao_0902 / tyami-store booth). License đọc từ
-  `利用規約/20241028105600vn3license_en.pdf` (đã extract full text).
-- ✅ Personal use, integration vào software (R), chỉnh file format — **Permitted**.
-- ⚠️ **Redistribution original version (M) + modified (N) — PROHIBITED.**
-  → **KHÔNG commit model lên GitHub public.** Chỉ commit nếu repo PRIVATE.
-  File license gốc giữ trong thư mục `茶味式　初音ミク/` (gitignored) — KHÔNG commit.
-- Repo hiện tại: **PRIVATE** `Shaichi/mikudayo-` → model trong `web/vrm-model/`
-  an toàn khi commit (chỉ mình bạn truy cập).
-
-### 0.5 Build / chạy
-- `flutter build windows --debug` → `build/windows/x64/runner/Debug/mikudayo.exe`.
-- WebView2 runtime có sẵn trên Windows 11. CDN cần internet lần đầu (three.js/three-vrm).
-- `flutter analyze` → 0 issues. Test live backend vẫn chạy độc lập.
-
-### 0.6 Hướng tiếp theo đã chốt
-- Sau VRM: **redesign toàn app theo "Dark hologram Futuristic"** (UI + cải tiến UX,
-  backend không đổi). User đã chọn scope này.
-
----
-
-## 1. ĐÃ HOÀN THÀNH (Phiên 2 — Phase 0–5 + Phase 6 scaffold)
-
-> Mục 1.1/1.2 giữ lại từ đầu phiên (Phase 0+1). Mục 1.5 trở đi là phần mới
-> Phase 2–6 trong cùng phiên.
-
-### 1.1 Backend Phase 1 — VERIFIED ✅
-Đã chạy thật với mock mode và test toàn bộ endpoints:
-
-| Kiểm thử | Kết quả |
-|---|---|
-| `GET /health` | ✅ `{status:ok, mode:mock, gemini:false,...}` |
-| `POST /v1/conversation/turn` (text) | ✅ trả reply_ja, emotion, vocabulary, turn_id, session_id, voice_mode=mock |
-| Session reuse | ✅ gửi `session_id` → dùng chung phiên |
-| Correction mode | ✅ trả correction_ja + explanation_vi |
-| `GET /v1/sessions` + `/turns` | ✅ |
-| `GET /v1/vocabulary` | ✅ |
-| `DELETE /v1/sessions/{id}` | ✅ |
-
-- File `.env` đã tạo (copy từ `.env.example`, GEMINI_API_KEY trống → mock).
-- Backend chạy: `python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`.
-
-### 1.2 Flutter Phase 0+1 — XONG ✅
-Thay mẫu counter bằng app hoàn chỉnh:
-
-**Cấu trúc `lib/`:**
-```
-lib/
-  app/        app.dart (MikuApp + ProviderScope), theme.dart (cyan #00A0B0/#39C2D7), router.dart
-  core/       config/server_config.dart, errors/api_exception.dart
-  data/
-    models/   conversation_turn.dart (ConversationResult, VocabItem, MouthCue, MikuEmotion),
-              session_record.dart, vocabulary_record.dart
-    services/ api_service.dart (http: sendText, getSessions, getTurns, getVocabulary,
-              deleteSession, health)
-    repositories/ conversation_repository.dart, settings_repository.dart (shared_preferences)
-  features/
-    home/            home_screen.dart (nav 4 tính năng, hero avatar)
-    conversation/    conversation_screen.dart, conversation_view_model.dart,
-                     widgets/{chat_bubble,vocab_chip,miku_avatar}.dart
-    history/         history_screen.dart (sessions → detail turns → delete)
-    vocabulary/      vocabulary_screen.dart
-    settings/        settings_screen.dart (server URL, mode, level, scenario + health check)
-  avatar/    avatar_controller.dart (placeholder Phase 5)
-  main.dart  (init SharedPreferences → override settingsRepositoryProvider)
+```text
+Người dùng nói tiếng Nhật
+  → Google/Android SpeechRecognizer nhận audio trực tiếp trên điện thoại
+  → Flutter chỉ nhận transcript dạng text
+  → FastAPI gửi text tới Gemini
+  → Gemini trả lời tiếng Nhật + emotion + sửa lỗi + từ vựng
+  → Fish Audio sinh giọng Miku-like hoàn toàn online bằng reference_id
+  → Flutter phát WAV và điều khiển biểu cảm/lip-sync của avatar Unity
 ```
 
-**Tính năng Phase 1:**
-- Text chat → backend → bubble reply_ja + transcript + correction_ja + explanation_vi
-  + emotion badge (😊😄😆🤔😳😢) + vocabulary chips.
-- Avatar Miku hình tròn gradient cyan + emoji cảm xúc.
-- State machine `idle → thinking → idle | error` (ApiException message thân thiện).
-- History / Vocabulary / Settings đầy đủ, lưu settings local.
+Yêu cầu quan trọng của chủ dự án:
 
-**Dependencies thêm:** `http`, `flutter_riverpod`, `path_provider`, `shared_preferences`.
+- Không chạy model giọng, CUDA hoặc GPU local; không tự host TTS/RVC.
+- API key Fish chỉ nằm trong FastAPI, không nhúng vào Flutter APK.
+- Android dùng nhận dạng giọng nói online của Google để ưu tiên độ chính xác.
+- **Không upload audio từ Android xuống FastAPI**; chỉ gửi transcript dạng text.
+- Avatar Miku phải hiển thị dọc, zoom gần giống ảnh tham chiếu: mặt ở khoảng 1/3 phía trên và thấy thân tới vùng đùi.
+- Khi bàn phím mở, không được co/resize Unity hoặc đổi tỷ lệ Miku; chỉ đẩy ô nhập text lên trên bàn phím.
+- Không cho màn hình hội thoại xoay ngang.
 
-### 1.3 Kiểm thử Flutter ✅
-- `flutter analyze` → **No issues found**.
-- `flutter test` → widget test pass (home screen hiển thị); integration test
-  (`test/api_service_live_test.dart`) pass khi backend mock chạy (mặc định skip).
-- `flutter build windows --debug` → ✅ build OK.
-- Chạy thử `mikudayo.exe` → process chạy, không crash.
-- Smoke test full flow (3 lượt chat + history + vocab) qua API → OK.
+## 2. Trạng thái tổng quan
 
-### 1.4 README + HANDOFF ✅
-- `README.md` chính thức: giới thiệu, kiến trúc, cách chạy backend (mock + live),
-  cách chạy Flutter (desktop/phone/emulator), checklist Phase 1–6, bảo mật, license.
-- `.gitignore` gốc bổ sung backend/.env, data/, *.wav.
-- DB `backend/data/miku.db` đã xóa để bàn giao sạch (server tạo lại khi chạy).
-
----
-
-## 1.5 PHASE 2–6 ĐÃ TRIỂN KHAI (cùng phiên)
-
-### 1.5.1 Backend Phase 2–5 — VERIFIED ✅
-
-| Thành phần | File | Trạng thái |
+| Hạng mục | Trạng thái | Ghi chú |
 |---|---|---|
-| Audio upload + transcribe | `app/api/conversation.py` (field `audio`), `gemini_service.generate_turn(audio_bytes)` | ✅ mock trả `（音声入力・モック）…`; live: **faster-whisper transcribe → Gemini text** |
-| TTS | `services/voicevox_service.py` `synthesize()` = `/audio_query` → `/synthesis`; `mock_wav()` 440+880Hz khi engine tắt | ✅ |
-| RVC | `services/rvc_service.py` `convert()` POST `/convert`; fallback source.wav khi worker lỗi | ✅ |
-| Lip-sync | `services/lipsync_service.py` RMS 50ms → `MouthCue{t_ms,mouth}` | ✅ |
-| Audio endpoint | `GET /v1/audio/{turn_id}` → FileResponse wav | ✅ |
-| `/health` engine flags | `voicevox`, `rvc` | ✅ |
+| FastAPI + Gemini | Đã chạy | `/health` từng xác nhận `gemini=true` |
+| Fish Audio online TTS | Đã tích hợp code | Cần điền `FISH_API_KEY` để kiểm tra live |
+| Script khởi động backend | Đã làm | Double-click `START_BACKEND.cmd` |
+| Flutter gọi backend bằng text | Đã chạy | Android gửi transcript, không gửi audio |
+| Google SpeechRecognizer trên Android | Đã kiểm tra bằng máy thật | Nhận đúng `こんばんは` và `何か面白いですか` |
+| Text-first/audio background | Đã giữ nguyên contract | Fish Audio chạy nền sau khi text Gemini được trả |
+| Unity avatar nhúng trong Flutter Android | Đã build | Dùng `flutter_embed_unity` |
+| Khóa portrait | Đã code và build APK | Chưa kiểm tra trực quan lại trên máy sau bản build cuối |
+| Zoom Miku mới | Đã code, export Unity và build APK | Chưa kiểm tra trực quan lại trên máy sau bản build cuối |
+| Keyboard chỉ đẩy ô text | Đã code và build APK | Chưa kiểm tra trực quan lại trên máy sau bản build cuối |
+| Gesture VRMA + idle pool của Unity | Đã code, export Unity và build APK | Wave/clap/thinking/sad/surprise + idle tự nhiên; chờ kiểm tra trực quan trên máy thật |
+| `flutter analyze` | Đạt | `No issues found` ở lần chạy gần nhất |
+| APK debug mới nhất | Đã build | 415,998,826 bytes (2026-08-17, có fix shader VRMA); đường dẫn ở mục 8 |
 
-Full pipeline thử thật (mock): `POST turn text → reply_ja + emotion + audio_url +
-16 mouth_cues`, tải audio về = WAV RIFF hợp lệ. `sendAudio` upload → transcript mock
-+ reply + cues.
+## 3. Kiến trúc runtime hiện tại
 
-### 1.5.2.5 STT faster-whisper (Phase 2+) — VERIFIED ✅
+### 3.1 Các tiến trình trên PC
 
-- `pip install faster-whisper` + `app/services/stt_service.py` (transcribe WAV → text).
-- Pipeline: **audio mic → Whisper transcribe → Gemini text-only → reply → TTS → RVC**.
-  → KHÔNG cần model Gemini hỗ trợ audio → dùng `gemini-3.5-flash-lite` (nhanh/nhẹ).
-- Model `small` (~500MB), device tự chọn (CUDA/CPU), `WHISPER_LANGUAGE=ja`.
-- Audio rỗng/không nghe rõ → `400 "Không nghe rõ bạn nói gì."` (thân thiện).
-- Verified: VOICEVOX 発話 "こんにちは…" → Whisper transcribe chính xác
-  `こんにちは私はミクです日本語を練習しましょう` → Gemini reply → voice_mode=rvc.
-- Log UTF-8 fix trong `core/logging.py` (Windows console cp1252 gây UnicodeEncodeError).
+| Thành phần | Địa chỉ | Vai trò |
+|---|---|---|
+| Fish Audio | `https://api.fish.audio/v1/tts` | TTS tiếng Nhật online, trả audio trực tiếp |
+| FastAPI | `http://0.0.0.0:8000` | Gemini, lịch sử, bảo vệ Fish API key, trả audio |
 
-### 1.5.2.6 Prompt nhất quán — VERIFIED ✅
+Python backend hiện được ưu tiên tại:
 
-- **Gốc rễ "lộn xộn"**: `contents` gửi dạng **string thô** → Gemini **bỏ qua
-  user input**, trả reply chung chung (`transcript_ja:"（なし）"`). Fix: gửi
-  `contents = types.UserContent(parts=[types.Part(text=user_text)])`.
-- Viết lại `SYSTEM_PROMPT_TEMPLATE`: **Output contract** (mô tả từng field của
-  schema), **Language**, **Speaking style** (1–3 câu ngắn, ấm áp, Miku persona),
-  **Mode-specific rules** (free_talk/correction/roleplay), **Level matching**
-  (difficulty = jlpt_level), **Context** (mode/scenario/level/summary/recent).
-- Thêm param `scenario` vào `build_prompt`/`generate_turn` + plumb qua
-  `conversation.py` (form field `scenario`).
-- Verified 3 mode qua HTTP (requests lib): free_talk trả lời tự nhiên + 1 câu
-  hỏi; correction bắt đúng lỗi `ますた→ました` + giải thích tiếng Việt; roleplay
-  đóng vai đúng (店員 nói `いらっしゃいませ！`).
-- **Lưu ý push GitHub**: mạng chặn HTTP/2 → lỗi "Failed to connect github.com
-  port 443" dù curl OK. Fix: `git config http.version HTTP/1.1` (đã set local).
+```text
+C:\Users\pc\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
+```
 
-### 1.5.2 Flutter Phase 2–5 — XONG ✅
+Nếu không có file trên, script fallback sang `backend\.venv\Scripts\python.exe`.
 
-- **Push-to-talk** (`conversation_screen.dart` `_InputBar`): giữ mic → `recording` (đếm
-  giây), nhả → `stopRecordingAndSend()`, kéo ra ngoài → hủy. Mic record package
-  (WAV 16kHz mono) qua `data/services/audio_service.dart`.
-- **Playback** just_audio: `_completeTurn` tải audio_bytes → `playBytes` song song
-  `avatar.playMouthCues(mouthCues)`.
-- **Avatar lip-sync**: `avatar_controller.dart` `AvatarState.mouthOpen` + `playMouthCues()`
-  (Timer 30ms nội suy cue), `miku_avatar.dart` scale emoji theo `mouthOpen`.
-- **Live2D bridge**: `lib/avatar/live2d_bridge.dart` — abstract `Live2dBridge` +
-  `NoopLive2dBridge`. Khi có SDK thật chỉ cần implement + `setBridge()`, UI không đổi.
+### 3.2 Pipeline trả lời
 
-### 1.5.3 Phase 6 scaffold (research) 🔬
+Endpoint chính:
 
-- `backend/app/api/realtime.py` — WebSocket `/v2/live`: nhận text event + PCM chunk,
-  ack round-trip (đã test WS: event.ack, pcm.ack, disconnect OK).
-- Chưa nối Gemini Live (Preview, stateful WSS, PCM 16k/24k). Giữ push-to-talk là
-  sản phẩm chính; merge realtime chỉ khi latency < ~1s (mục 14.1 tài liệu).
+```text
+POST /v1/conversation/turn
+```
 
-### 1.5.4 Kiểm thử Phase 2–5 ✅
+Android gọi endpoint này bằng form text. Backend thực hiện:
 
-- `flutter analyze` → **No issues found** (sửa `dispose()` → `ref.onDispose` trong
-  `avatar_controller.dart`, `prefer_function_declarations_over_variables` trong test).
-- `flutter test` → **4/4 pass** (3 live integration vs backend mock + widget test).
-- `flutter build windows --debug` → ✅ build OK.
-- Live WS test `/v2/live` round-trip OK.
+1. Tạo/lấy session SQLite.
+2. Gọi Gemini để lấy JSON có cấu trúc.
+3. Lấy `reply_ja` và `emotion`.
+4. Backend trả text/emotion ngay với `voice_mode=pending`, không chờ TTS.
+5. Background task gọi Fish `/v1/tts` bằng `reply_ja`, emotion và `reference_id`.
+6. Fish trả WAV/MP3/Opus trực tiếp; backend lưu tạm với đúng phần mở rộng.
+7. Với WAV, backend tính mouth cues RMS. MP3/Opus hiện trả mouth cues rỗng.
+8. Flutter poll `GET /v1/audio/<turn_id>/status`, sau đó phát `audio_url`.
 
-### 1.5.5 RVC live — VERIFIED ✅ (3 engine thật)
+Nếu thiếu Fish key và `ALLOW_MOCK=true`, backend trả WAV diagnostic để test UI. Nếu đã có key mà Fish lỗi, audio status chuyển sang `error` thay vì phát âm giả.
 
-Cài **cả 3 engine chạy thật** và verify end-to-end (text → Gemini → VOICEVOX → RVC):
+## 4. Google Speech-to-Text trên Android
 
-| Thành phần | Trạng thái live |
+Code chính: `lib/data/services/speech_recognition_service.dart`.
+
+Đang dùng package:
+
+```yaml
+speech_to_text: ^7.4.0
+```
+
+Thiết kế đã chốt:
+
+- Android `SpeechRecognizer`/Google xử lý microphone trực tiếp.
+- Locale được đặt cố định là `ja-JP`.
+- App chỉ lấy `recognizedWords`, sau đó gọi `ApiService.sendText(...)`.
+- Không tạo WAV và không có API upload audio microphone.
+- Nhập giọng nói hiện chỉ hỗ trợ Android; nền tảng khác vẫn nhập text và phát WAV trả lời bình thường.
+- Nút microphone hỗ trợ bấm một lần để bắt đầu, bấm lần nữa để dừng/gửi; nhấn giữ và thả cũng được hỗ trợ.
+- Đã xử lý race condition bằng `_voiceStartTask` và cập nhật trạng thái recording trước khi chờ khởi tạo recognizer.
+- Thời gian tự kết thúc khi im lặng đã tăng từ `1.8s` lên `5s` sau khi ADB
+  chứng minh recognizer thường đóng trước khi người dùng bắt đầu nói.
+- App giữ kết quả không rỗng gần nhất, không để callback rỗng xóa transcript.
+- Khi stop, app chờ callback muộn tối đa `1.8s`, chặn session dưới `800ms` và
+  giải phóng audio playback trước khi mở microphone.
+
+### Kiểm tra máy thật đã thành công
+
+Thiết bị đã dùng:
+
+```text
+ADB ID: 8a855606
+Tên hiển thị: 21121210C
+Android 14 / API 34
+```
+
+Dịch vụ recognizer được Android chọn:
+
+```text
+com.google.android.tts/...GoogleTTSRecognitionService
+```
+
+Log đã xác nhận:
+
+```text
+[STT] initialized=true
+[STT] listen locale=ja-JP
+[STT] status=listening
+NetworkSpeechRecognizer: Online recognizer - start listening
+```
+
+Kết quả thực tế đã nhận:
+
+```text
+こんばんは
+何か面白いですか
+日本の勉強
+```
+
+Bản sửa `error_no_match` ngày 2026-08-14 đã được build, cài lên thiết bị
+`8a855606` và xác minh hai lượt liên tiếp nhận đúng `こんばんは` và
+`日本の勉強`; không còn mất partial result sau callback rỗng.
+
+Câu đầu đã được gửi tới backend và Miku trả lời:
+
+```text
+こんばんは！ミクです。きょうはどんなお話をしましょうか？
+```
+
+Lưu ý quan trọng: trước đây `speech_to_text.locales()` bị treo trên ROM Xiaomi sau khi initialize. Đã bỏ bước query locales và hardcode `ja-JP`. **Không thêm lại `locales()` nếu chưa kiểm tra đúng trên máy Xiaomi này.** Log SODA offline có `ConfigStatus 5`, nhưng recognizer online của Google vẫn hoạt động; đây không phải blocker vì yêu cầu là dùng online.
+
+## 5. Flutter và Unity avatar
+
+> **Đã lỗi thời (2026-10-22):** Unity/VRM đã gỡ khỏi app, xem mục 16.
+
+### 5.1 Renderer
+
+- Android/iOS: `UnityAvatar` nhúng Unity native.
+- Desktop: `VrmAvatar` qua web renderer.
+- Package Android Unity:
+  - `flutter_embed_unity: 2.0.0`
+  - `flutter_embed_unity_6000_0_android: 2.0.0`
+
+### 5.2 Thay đổi giao diện mới nhất
+
+Khóa portrait được áp dụng ở ba nơi:
+
+- `lib/main.dart`: chỉ cho `DeviceOrientation.portraitUp`.
+- `android/app/src/main/AndroidManifest.xml`: `android:screenOrientation="portrait"`.
+- Unity `ProjectSettings`: orientation Portrait và tắt mọi autorotate.
+
+Không resize avatar khi mở bàn phím:
+
+- `Scaffold.resizeToAvoidBottomInset = false`.
+- Android activity dùng `android:windowSoftInputMode="adjustNothing"`.
+- `MediaQuery.viewInsetsOf(context).bottom` chỉ được dùng để translate composer bằng `Matrix4.translationValues`.
+- Unity viewport và các thành phần nền giữ nguyên kích thước.
+
+Camera Miku hiện tại trong `MikuCameraFramer.cs`:
+
+```csharp
+distanceMultiplier = 0.68f;
+focus = Vector3.Lerp(hips.position, head.position, 0.48f);
+```
+
+Mục tiêu bố cục: mặt nằm gần 1/3 phía trên, thân chiếm phần lớn khung dọc và thấy tới vùng đùi, giống ảnh tham chiếu người dùng đã gửi.
+
+### 5.3 Trạng thái xác minh quan trọng
+
+Source Unity đã được prepare, scene đã serialize `distanceMultiplier: 0.68`, module Unity đã export lại và Flutter APK đã build thành công. Tuy nhiên ADB mất kết nối sau quá trình Unity build, nên **bản zoom/portrait/keyboard mới nhất chưa được nhìn lại trực tiếp trên điện thoại**. Đây là việc ưu tiên số 1 khi tiếp tục.
+
+### 5.4 Hệ gesture VRMA (mốc 2026-08-16)
+
+Avatar hiện có gesture clip VRMA phát trên skeleton VRM kèm fade in/out, cộng một lớp idle tự nhiên chạy liên tục:
+
+- `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuGestureController.cs` — load clip VRMA từ Resources TextAsset, phát trên ControlRig, fade weight vào/ra để không giật khi bắt đầu/kết thúc. Clip nằm tại `Resources/vrma_gestures/*.vrma.bytes` (Resources path `vrma_gestures/<name>.vrma`): **wave, clap, thinking, sad, surprise**. Clip `nod` chưa có: khi Gemini trả gesture "nod", Unity log cảnh báo `gesture asset not found` và no-op (không crash).
+- `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuIdlePool.cs` — các biến thể idle (nhún vai, đảo trọng tâm…) cộng head glance chậm, chạy trong `LateUpdate` với `[DefaultExecutionOrder(10500)]` (sau `MikuRelaxedPose` ở 10000), đóng băng trong lúc phát gesture.
+- `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuAvatarBridge.cs` — nhận lệnh từ Flutter: `PlayGesture(message)` với payload JSON `{"gesture":"name"}`, `StopGesture(message)` dừng ngay kèm fade out.
+
+Flutter trigger (`lib/features/conversation/conversation_view_model.dart`): câu chào → `wave`; lúc chờ audio TTS → `thinking`; khi audio bắt đầu phát → `stopGesture` (cắt thinking); sau mỗi lượt trả lời → gesture theo emotion/result của backend. Backend (`backend/app/api/conversation.py`) truyền trường `gesture` từ Gemini response tới Flutter.
+
+Nguồn + license clip VRMA: tải từ repo **github.com/tk256ailab/vrm-viewer (MIT License)**, đổi tên thành `*.vrma.bytes` để Unity import dạng TextAsset.
+
+## 6. Cách khởi động backend
+
+Cách đơn giản nhất:
+
+```text
+Double-click: C:\Users\pc\Desktop\mikudayo\START_BACKEND.cmd
+```
+
+Script sẽ:
+
+1. Kiểm tra Python backend.
+2. Nhắc cấu hình `.env` nếu file chưa tồn tại.
+3. Khởi động duy nhất FastAPI ở `0.0.0.0:8000`.
+4. Không khởi động model giọng, CUDA hoặc tiến trình TTS local.
+
+Kiểm tra nhanh trên PC:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+```
+
+Kết quả tốt cần có:
+
+```json
+{"status":"ok","gemini":true,"fish_audio":true,"mode":"live","tts_model":"s2.1-pro-free"}
+```
+
+Từ điện thoại không dùng `127.0.0.1`. URL backend trong Settings của app phải là:
+
+```text
+http://<IP-của-PC-trong-LAN-hoặc-Tailscale>:8000
+```
+
+## 7. Unity prepare và export
+
+> **Đã lỗi thời (2026-10-22):** không còn bước Unity, xem mục 16.
+
+Unity source nằm tại:
+
+```text
+unity\MikuAvatar
+```
+
+Flutter sử dụng module Unity được export tại:
+
+```text
+android_room\android\unityLibrary
+```
+
+Sau mỗi thay đổi Unity source/scene, phải prepare và export lại. Các lệnh đã dùng thành công:
+
+```powershell
+& 'D:\Unity\Hub\Editor\6000.3.3f1\Editor\Unity.exe' `
+  -batchmode -nographics -buildTarget Android `
+  -projectPath 'C:\Users\pc\Desktop\mikudayo\unity\MikuAvatar' `
+  -executeMethod Mikudayo.Avatar.Editor.MikuProjectSetup.PrepareEmbeddedScene `
+  -quit `
+  -logFile 'C:\Users\pc\Desktop\mikudayo\64-gesture-prepare.log'
+
+& 'D:\Unity\Hub\Editor\6000.3.3f1\Editor\Unity.exe' `
+  -batchmode -nographics -buildTarget Android `
+  -projectPath 'C:\Users\pc\Desktop\mikudayo\unity\MikuAvatar' `
+  -executeMethod ProjectExporterBatchmode.ExportProject `
+  -exportPath 'C:\Users\pc\Desktop\mikudayo\android_room\android\unityLibrary' `
+  -quit `
+  -logFile 'C:\Users\pc\Desktop\mikudayo\65-gesture-export.log'
+```
+
+Log lần gần nhất có:
+
+```text
+Building project for Flutter succeeded
+```
+
+Không tự ý xóa `android_room/android/unityLibrary` nếu chưa sẵn sàng export lại từ Unity.
+
+## 8. Build và cài Android
+
+Tại thư mục root:
+
+```powershell
+flutter pub get
+flutter analyze
+flutter build apk --debug
+```
+
+APK mới nhất:
+
+```text
+C:\Users\pc\Desktop\mikudayo\build\app\outputs\flutter-apk\app-debug.apk
+```
+
+Thông tin build gần nhất:
+
+```text
+Kích thước: 415,998,826 bytes
+Thời điểm: 2026-08-17 01:05:15 (bản có gesture VRMA + fix shader URP + polish review cuối)
+```
+
+Cài lại khi điện thoại xuất hiện trong `adb devices`:
+
+```powershell
+adb devices
+adb install -r 'C:\Users\pc\Desktop\mikudayo\build\app\outputs\flutter-apk\app-debug.apk'
+```
+
+Build sạch Unity IL2CPP cho ARMv7 + ARM64 có thể mất khoảng 20 phút. Không kết luận build bị treo chỉ vì không có log mới trong vài phút; kiểm tra process và chờ hợp lý.
+
+## 9. File quan trọng
+
+| File/thư mục | Trách nhiệm |
 |---|---|
-| Gemini | ✅ `gemini:true`, model `gemini-3.5-flash-lite` (key thật, text-only + Whisper STT) |
-| VOICEVOX | ✅ `voicevox:true` (app 0.25.2, port 50021, speaker 0) |
-| RVC | ✅ `rvc:true` (worker port 8010, model `miku_mellow_rvc.pth`, GPU) |
+| `START_BACKEND.cmd` | Chỉ khởi động FastAPI; không chạy model local |
+| `backend/app/api/conversation.py` | Trả text trước, chạy Fish Audio nền, cung cấp audio status |
+| `backend/app/services/fish_audio_service.py` | Gọi Fish `/v1/tts`, map emotion/prosody và định dạng audio |
+| `backend/app/core/config.py` | Cấu hình Gemini và Fish Audio |
+| `backend/.env.example` | Mẫu biến môi trường, không chứa secret thật |
+| `lib/data/services/speech_recognition_service.dart` | Google/Android STT, trả transcript text |
+| `lib/data/services/api_service.dart` | Gọi FastAPI bằng text và parse response |
+| `lib/features/conversation/conversation_view_model.dart` | Luồng mic, gửi text, phát audio và state hội thoại |
+| `lib/features/conversation/conversation_screen.dart` | UI Miku, subtitle, mic, composer và keyboard behavior |
+| `lib/main.dart` | Khởi tạo app và khóa portrait Flutter |
+| `android/app/src/main/AndroidManifest.xml` | Permission mic/internet, portrait, soft input |
+| `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuCameraFramer.cs` | Crop/zoom camera Miku |
+| `unity/MikuAvatar/Assets/Mikudayo/Editor/MikuProjectSetup.cs` | Tạo/prepare embedded Unity scene |
+| `unity/MikuAvatar/Assets/Mikudayo/Scenes/MikuAvatar.unity` | Scene đã serialize |
+| `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuGestureController.cs` | Phát VRMA gesture, fade in/out |
+| `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuIdlePool.cs` | Idle biến thể + head glance, LateUpdate order 10500 |
+| `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuAvatarBridge.cs` | Lệnh PlayGesture/StopGesture từ Flutter |
+| `unity/MikuAvatar/Assets/Mikudayo/Resources/vrma_gestures/*.vrma.bytes` | Clip gesture VRMA (wave, clap, thinking, sad, surprise) |
+| `unity/MikuAvatar/Assets/Mikudayo/Runtime/MikuGestureDemoHarness.cs` | Harness demo trigger gesture trong Unity |
+| `lib/data/models/conversation_turn.dart` | Enum `MikuGesture` + parse từ API |
+| `lib/avatar/avatar_controller.dart` | `playGesture`/`stopGesture` đẩy qua bridge |
+| `lib/features/conversation/conversation_view_model.dart` | Trigger gesture (wave chào, thinking chờ audio, gesture theo kết quả) |
 
-- **RVC worker**: `backend/rvc_worker.py` (port 8010) — môi trường riêng
-  `.venv-rvc` (Python 3.10, fairseq không chạy 3.11). Cần `pip<=24.0` nếu
-  omegaconf lỗi metadata. Model `miku_mellow_rvc.pth` + `.index` trong
-  `backend/models/` (gitignore).
-- **Verify thật**: `POST /v1/conversation/turn` text → `voice_mode:"rvc"`,
-  audio download = WAV **40kHz mono 7.28s 582KB**; RVC worker log
-  `convert OK: 350252 -> 582444 bytes in 2.57s` (GPU, lần đầu ~66s cold→warm).
-- Bước vẽ: `<source>` (24kHz VOICEVOX) → `/convert` → RVC output (40kHz),
-  fallback về source.wav khi worker lỗi (`rvc_fallback`).
-- RVC API: `set_params(f0up_key=0, f0method="rmvpe")` rồi `infer_file(in,out)`
-  — `infer_file` KHÔNG nhận kwargs.
+## 10. Vấn đề đã biết và việc chưa hoàn tất
 
-### 1.5.6 Git
+### Ưu tiên cao
 
-- Repo `https://github.com/Shaichi/mikudayo-.git`, branch `main`, đã push.
-- `.gitignore` bổ sung: `.env`, `data/`, `audio/`, `build/`, `.claude/`,
-  `backend/.venv-rvc/`, `backend/models/`.
+1. Kết nối lại điện thoại bằng ADB và cài APK mới nhất.
+2. Kiểm tra trực quan đúng bốn điều:
+   - màn hình không xoay ngang;
+   - Miku đã zoom gần giống ảnh tham chiếu;
+   - mở bàn phím không làm Miku co lại;
+   - chỉ ô nhập text được đẩy lên trên bàn phím.
+3. Checklist trực quan hệ gesture (mốc 2026-08-16 — tất cả đang chờ kiểm tra trên máy thật):
+   1. Chờ 30s không làm gì: thế tay đổi ≥2 kiểu, đầu liếc, không giật/drift.
+   2. Nói/nhập câu chào (`こんばんは`): Miku vẫy tay 1 lần.
+   3. Trong lúc chờ giọng: chống cằm/nghiêng đầu; khi audio phát thì gesture cắt mượt.
+   4. Câu trả lời vui: vỗ tay; buồn: cúi đầu; tay không văng khỏi khung dọc.
+   5. Vài lượt liên tiếp: không crash, không kẹt pose, portrait/zoom/keyboard không đổi.
+4. Điền `FISH_API_KEY`, thử microphone Google → transcript → Gemini → Fish Audio và quan sát emotion/gesture/avatar end-to-end.
+5. Nếu biên độ idle quá mờ hoặc quá lố trên máy thật, tune hệ số biên độ trong `MikuIdlePool.cs`, prepare + export + build lại.
+6. Thiếu clip `nod.vrma`: tìm hoặc tự làm clip nod cho vào `Resources/vrma_gestures/` (hiện tại Gemini trả "nod" chỉ log cảnh báo và không phát gì).
+7. Polish tùy chọn: gọi `avatar.stopGesture()` ngay trước `avatar.playGesture(gestureFor(result))` trong `_completeTurn` để một lần chờ TTS lỗi không để gesture "thinking" bị kẹt.
 
----
+### Kỹ thuật cần dọn sau khi UI được duyệt
 
-## 2. VIỆC CÒN LẠI (defer — chỉ khi cần)
+- Luồng recorder/upload audio và STT backend cũ đã được xóa; backend chỉ nhận text.
+- Flutter build cảnh báo NDK: app/Unity đang pin `27.2.12479018`, trong khi `speech_to_text` và `jni` đề nghị `28.2.13676358`. Build hiện vẫn thành công. Không đổi NDK riêng lẻ nếu chưa kiểm tra tương thích Unity + Flutter cùng lúc.
+- APK debug khoảng 507 MB do Unity native libs/debug symbols. Tối ưu release/ABI/symbol chưa làm.
+- Fish free model/campaign có thể thay đổi; chuẩn bị đổi `FISH_MODEL` khi gói hiện tại kết thúc.
+- Public voice có thể bị gỡ hoặc đổi quyền. Khi đó thay `FISH_REFERENCE_ID`.
+- SSE/WebSocket streaming thật chưa nối vào Flutter; bản hiện tại dùng REST background để giữ contract ổn định.
 
-> Phase 2–5 đã xong. Chỉ còn việc *optional* dưới đây.
+## 11. Trạng thái Git và quy tắc an toàn
 
-### Defer A — cài engine thật (đã xong ✅, giữ lại để reference)
-> Đã cài + verify 3 engine thật ở mục 1.5.5. Nếu build trên máy mới:
-- Cài **VOICEVOX** (cổng 50021) → `/health` báo `voicevox:true`; giọng Miku-like.
-- Chạy **RVC worker** (cổng 8010) + load model → `rvc:true`, nghe giọng chuyển đổi.
-- Điền `GEMINI_API_KEY` vào `.env` → trả lời + transcribe thật (thay mock).
+Branch hiện tại:
 
-### Defer B — Live2D avatar thật
-- Chưa có SDK Live2D chính thức cho Flutter (mục 10 tài liệu). Implement
-  `Live2dBridge` (web/native), gọi `avatarController.setBridge()` — UI không đổi.
+```text
+codex/fish-audio-tts
+```
 
-### Defer C — Phase 6 Realtime (research only)
-- Gemini Live là Preview: stateful WebSocket, PCM 16kHz in / 24kHz out [S7][S24].
-- Khung `/v2/live` đã có (event + PCM ack). Khi thử: nối Gemini Live client,
-  đo latency; merge nhánh chỉ khi < ~1s và ổn định.
+Worktree đang có nhiều thay đổi chưa commit, gồm cả source, Unity scene/export, test và file do người dùng tạo. **Không reset, checkout đè, clean hoặc xóa hàng loạt.** Trước khi commit phải xem `git diff` và chọn đúng file.
 
----
+Một số file untracked đáng chú ý:
 
-## 3. LƯU Ý KỸ THUẬT
-- Backend mock khi `GEMINI_API_KEY` trống → toàn pipeline UI test được không cần key.
-  VOICEVOX/RVC tắt → tự mock WAV / fallback, app vẫn chạy đủ pipeline.
-- Key Gemini chỉ trong `backend/.env`, không commit. Google chuyển auth keys từ 09/2026.
-- Environment: Windows 11, Python 3.11.15, Flutter 3.41.9 / Dart 3.11.5.
-- Git: repo `Shaichi/mikudayo-`, branch `main`, đã push (README + HANDOFF + full source).
-- Console Windows không hiển thị UTF-8 qua `curl` (ra `?????`) — test bằng
-  `PYTHONIOENCODING=utf-8 python -c "..."` với httpx, hoặc dùng `-F "text=..."`
-  với tool hỗ trợ UTF-8.
-- Backend chạy mock mode 3 engine: có thể xóa `backend/data/miku.db` + `backend/data/audio/`
-  bất cứ lúc nào — server tự tạo lại.
+```text
+START_BACKEND.cmd
+backend/app/services/fish_audio_service.py
+backend/tests/
+lib/data/services/speech_recognition_service.dart
+tailscale-setup-1.102.2-amd64.msi
+tailscale-setup-latest.exe
+unity/MikuAvatar/Assets/Mikudayo/Backgrounds/
+```
+
+Hai installer Tailscale không phải source của app; không đưa vào commit dự án. Không commit:
+
+- `.env` có API key;
+- audio người dùng, SQLite runtime hoặc file tạm;
+- installer ngoài dự án;
+- generated/cache không cần thiết.
+
+## 12. Chỉ dẫn dành cho agent tiếp theo
+
+Khi tiếp tục dự án:
+
+1. Dùng file này làm baseline, sau đó kiểm chứng lại bằng code/log hiện tại.
+2. TTS hiện tại là **Fish Audio online**; không khôi phục model giọng local.
+3. Không thêm lại upload audio; yêu cầu đã chốt là Google SpeechRecognizer trên điện thoại và chỉ gửi text.
+4. Không thêm lại gọi `speech_to_text.locales()` trên Xiaomi nếu chưa có phương án timeout/fallback đã test.
+5. Không làm resize Unity khi bàn phím mở.
+6. Sau khi sửa Unity, chạy cả prepare + export trước khi build Flutter.
+7. Không tuyên bố zoom/keyboard đã đạt yêu cầu hình ảnh cho đến khi cài APK mới nhất và nhìn trên máy thật.
+8. Bảo toàn các thay đổi chưa commit và không thực hiện thao tác Git phá hủy dữ liệu.
+9. Nếu điều chỉnh camera, thay đổi nhỏ quanh `distanceMultiplier = 0.68f`, export, build và so sánh trên máy thật; tránh chỉnh nhiều biến cùng lúc.
+10. Cập nhật lại file này sau mỗi mốc đã xác minh để agent sau không dựa vào trạng thái cũ.
+
+## 13. Tiêu chí hoàn thành mốc tiếp theo
+
+Mốc UI + voice hiện tại chỉ được coi là hoàn tất khi máy Android thật xác nhận:
+
+- app chỉ chạy portrait;
+- Miku có crop/zoom đúng ảnh tham chiếu;
+- bàn phím không làm thay đổi kích thước hoặc tỷ lệ avatar;
+- nhập text và microphone đều gửi được câu;
+- Google recognizer online nhận tiếng Nhật;
+- backend trả phản hồi Gemini;
+- audio cuối có `voice_mode=fish_audio` khi Gemini và Fish được cấu hình;
+- emotion của phản hồi được phản ánh hợp lý ở giọng và avatar;
+- không có crash hoặc mất tương tác sau vài lượt liên tiếp.
+
+## 14. AI guardrails (mốc 2026-10-21, `.sdd/features/feat-ai-guardrails/SPEC.md`)
+
+Đã đo bằng Gemini thật (`backend/tests/eval`, chạy: `python -X utf8 -m tests.eval.run_eval`; gói free 15 req/phút, runner tự giãn cách):
+
+- **RAG vector ngữ pháp không hoạt động**: độ tương đồng câu đúng/sai đều 0.54–0.68, ngưỡng 0.7 → 0 chunk. Chế độ correction giờ dùng bước phát hiện lỗi (`detect_error`, temp 0, kèm `severity`) rồi tra chunk theo `error_type` (`grammar_taxonomy.py`). RAG vector chỉ là đường dự phòng khi `AI_ERROR_DETECTION_ENABLED=false`.
+- Pipeline mới `services/turn_pipeline.py`: phát hiện lỗi → sinh → hậu kiểm (`guardrails.py`) → sinh lại tối đa 1 lần → câu dự phòng. Gemini 429 → HTTP 503 + `Retry-After`. `scenario` được chuẩn hóa và gắn nhãn dữ liệu không đáng tin.
+- Kết quả: bộ 30 ca đạt 154/155 check (trước đó 149/150 nhưng RAG chết, sửa-nhầm chưa được đo đúng). Bộ `co-*` sau chỉnh `severity`: 74/75.
+- **Còn tồn tại**: `co-ok-8` (`雨が降るから、傘を持ってください`) — detector (flash-lite) vẫn báo lỗi sai (`word_choice`/`request`) dù câu đúng. Hướng xử lý tiếp: bước xác minh lần hai cho các loại lỗi `word_choice`/`request`/`other`, hoặc dùng model mạnh hơn cho detector.
+- Chưa làm: nối `last_gesture`/guardrail vào kiểm thử end-to-end qua HTTP, đo trên giọng nói thật (lỗi STT), tune ngưỡng độ dài theo level.
+- Lưu ý: tài liệu Unity ở §5.4 có thể lỗi thời — `MikuAvatarBridge.PlayGesture` hiện gọi `MikuNaturalGestureController` (chỉ đầu/ngực), không còn phát clip VRMA; `nod.vrma.bytes` đã có trong repo.
+
+## 15. Avatar 2D Live2D + giao diện sáng (mốc 2026-10-22)
+
+**Avatar**: cờ `kUseLive2dAvatar` (`lib/avatar/avatar_config.dart`, đang `true`) thay Unity/VRM bằng Live2D trong màn hội thoại. Code Unity/VRM còn nguyên, đặt cờ `false` để quay lại.
+
+- Renderer: `assets/web/live2d/index.html` (PixiJS 6.5.10 + pixi-live2d-display 0.4.0 + Live2D Cubism Core 5, trong `lib/`), chạy trong `VrmAvatar(assetRoot: 'assets/web/live2d/', rawEmotions: true)` qua `AssetHttpServer` (đã decode `%20` trong đường dẫn). Giao thức JS: `emotion` (6 biểu cảm), `speech` (cues), `exps` (danh sách file exp3 bật cùng lúc), JS gửi lại `loaded`/`error`/`tap`.
+- Model: Miku "いますぐ輪廻" (Ruby_呜哔うび / 慈善小霓, ko-fi.com/rubybee). **Chỉ dùng cá nhân, phi thương mại; cấm phát lại/re-upload/tách asset.** Không phát hành APK chứa model, không commit model: `assets/web/live2d/model/` nằm trong `.gitignore`. Gốc giải nén ở `C:\Users\pc\Desktop\mikudayo-private\miku2d\RetrynowMiku\`; chuẩn bị lại bằng cách copy file và hạ texture 4096→2048 (không sửa mesh/part). Clone mới thiếu thư mục model sẽ làm `flutter build` lỗi vì `pubspec.yaml` khai báo nó.
+- Tham số `Watermark`=1 là ẩn watermark (toggle của tác giả); `#watermark=on` để hiện.
+- Chạm model: đầu → embarrassed, thân → happy, dưới → excited (2,2 s).
+- Tay/đạo cụ/trang phục: `lib/avatar/avatar_look.dart` (lưu SharedPreferences) + `widgets/look_sheet.dart`, mở bằng nút mắc áo trên thanh trên. Mọi đạo cụ chỉ hiện đủ với tư thế `Hold Staff2`, nên chọn đạo cụ tự thêm tư thế đó. Tư thế `Item Behind Back*` thực chất cầm gậy sang bên → không đưa vào app.
+- Demo web: `cd assets/web/live2d && python -m http.server 8765` → `demo.html` (có nút cho cả ~40 exp3).
+- Chưa làm: cử chỉ (`gesture`) cho Live2D; Gemini chưa biết các biểu cảm/đạo cụ mở rộng; chưa đo VRAM/FPS trên máy thật (17 texture 2048²; nếu giật hạ 1024).
+
+**Giao diện**: chuyển toàn app sang tông sáng theo Miku — `MikuTheme.primary` xanh ngọc đậm `#0F7F7A` (chữ/nút), `stageCyan` `#39C5BB` (mảng màu), `accent` hồng `#E0508F` (từ trang phục model), `mint`/`blush` cho nền phụ. `lib/app/miku_decor.dart`: `CandyStripe` (sọc kẹo như nơ Miku), `StaffLines` (khuông nhạc mờ nền màn hội thoại). Màn hội thoại: nền sáng, phụ đề thành thẻ thoại có nhãn ミク, nút trắng viền ngọc, micro xanh/hồng khi ghi âm. Trang chủ: bỏ thẻ tối + hình tròn trang trí, thay bằng thẻ trắng có dải sọc. Lịch sử/Từ vựng/Cài đặt chỉ đổi theo bảng màu theme.
+
+## 16. Gỡ Unity và VRM 3D (mốc 2026-10-22)
+
+App chỉ còn một avatar: **Live2D trong WebView** (`lib/avatar/live2d_avatar.dart`,
+widget `Live2dAvatar`, trước là `VrmAvatar`). Đã bỏ:
+
+- Dart: `unity_avatar.dart`, `avatar_config.dart` (cờ `kUseLive2dAvatar`), nhánh
+  VRM trong widget avatar.
+- `pubspec.yaml`: `flutter_embed_unity`, `flutter_embed_unity_6000_0_android`,
+  `webview_windows`, asset `assets/web/vrm/`.
+- Android: module `:unityLibrary` trong `settings.gradle.kts`, dependency và
+  `androidResources` riêng cho Unity trong `app/build.gradle.kts`, các dòng
+  `unity.*` trong `gradle.properties`.
+- Thư mục `unity/`, `android_room/`, `android/unityLibrary/`, `tool/`,
+  `assets/web/vrm/`, `茶味式　初音ミク/`, `VRM_RENDER_OPTIONS.md`.
+
+Các thư mục trên được **chuyển** (không xóa) sang
+`C:\Users\pc\Desktop\mikudayo_unity_vrm_backup\`. Có thể xóa thư mục backup
+khi chắc chắn không cần nữa.
+
+NDK: `android/app/build.gradle.kts` vẫn đặt `ndkVersion = "27.2.12479018"`.
+Trước đây thư mục NDK này là junction sang NDK của Unity ở ổ D (đã hỏng);
+giờ là NDK thật cài qua `sdkmanager "ndk;27.2.12479018"`.
+
+Build Android giờ chỉ cần `flutter build apk --release --target-platform
+android-arm64` (bản debug chậm hơn nhiều, đừng dùng để đánh giá độ mượt).
+

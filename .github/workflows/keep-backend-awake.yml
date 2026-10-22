@@ -1,0 +1,17 @@
+# Render free ngủ sau ~15 phút không có request; lần gọi đầu khi thức dậy mất
+# ~50s. Gọi /health định kỳ để Miku trả lời nhanh ngay từ câu đầu.
+# Lưu ý: GitHub chỉ chạy lịch trên nhánh mặc định (main) và có thể trễ vài phút.
+name: Keep backend awake
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping /health
+        run: curl -fsS --max-time 90 https://mikudayo.onrender.com/health
