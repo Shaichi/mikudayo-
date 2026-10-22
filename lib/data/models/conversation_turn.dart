@@ -38,7 +38,7 @@ enum MikuEmotion {
   };
 }
 
-/// Cử chỉ thân/tay của Miku (Unity phát qua VRMA).
+/// Cử chỉ thân/tay của Miku (backend gợi ý; renderer có thể bỏ qua).
 enum MikuGesture {
   none,
   wave,

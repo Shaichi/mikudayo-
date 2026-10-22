@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/miku_decor.dart';
 import '../../app/theme.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../data/services/api_service.dart';
@@ -23,7 +24,7 @@ class HomeScreen extends ConsumerWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFFE8FAFB), MikuTheme.canvas, Color(0xFFFFF7FA)],
+            colors: [MikuTheme.mint, MikuTheme.canvas, MikuTheme.blush],
           ),
         ),
         child: SafeArea(
@@ -91,15 +92,15 @@ class _HomeHeader extends StatelessWidget {
         width: 44,
         height: 44,
         decoration: BoxDecoration(
-          color: MikuTheme.ink,
+          color: MikuTheme.stageCyan,
           borderRadius: BorderRadius.circular(14),
         ),
         child: const Center(
           child: Text(
-            'M',
+            'ミ',
             style: TextStyle(
-              color: MikuTheme.stageCyan,
-              fontSize: 20,
+              color: Colors.white,
+              fontSize: 22,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -111,8 +112,12 @@ class _HomeHeader extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'MIKU',
-              style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 2.2),
+              'ミクと話そう',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+                color: MikuTheme.ink,
+              ),
             ),
             Text(
               'Bạn đồng hành tiếng Nhật',
@@ -144,66 +149,50 @@ class _PracticeHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     decoration: BoxDecoration(
-      color: MikuTheme.ink,
+      color: Colors.white,
       borderRadius: BorderRadius.circular(MikuTheme.radiusLarge),
+      border: Border.all(color: MikuTheme.stageCyan.withValues(alpha: 0.4)),
       boxShadow: [
         BoxShadow(
-          color: MikuTheme.primary.withValues(alpha: 0.2),
-          blurRadius: 30,
-          offset: const Offset(0, 16),
+          color: MikuTheme.primary.withValues(alpha: 0.10),
+          blurRadius: 24,
+          offset: const Offset(0, 10),
         ),
       ],
     ),
     clipBehavior: Clip.antiAlias,
-    child: Stack(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Positioned(right: -38, top: -56, child: _HeroOrb(size: 180)),
-        const Positioned(
-          right: 34,
-          bottom: -56,
-          child: _HeroOrb(size: 130, color: MikuTheme.accent),
-        ),
+        const CandyStripe(height: 12),
         Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
-                children: [
-                  Icon(
-                    Icons.auto_awesome_rounded,
-                    color: MikuTheme.stageCyan,
-                    size: 18,
-                  ),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'LUYỆN NÓI CÙNG MIKU',
-                      maxLines: 2,
-                      style: TextStyle(
-                        color: Color(0xFF9DC4C5),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.4,
-                      ),
-                    ),
-                  ),
-                ],
+              const Text(
+                'きょうは なにを はなす？',
+                style: TextStyle(
+                  color: MikuTheme.accent,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 6),
               const Text(
                 'Hôm nay mình\nnói chuyện gì?',
                 style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 30,
-                  height: 1.12,
+                  color: MikuTheme.ink,
+                  fontSize: 28,
+                  height: 1.15,
                   fontWeight: FontWeight.w800,
-                  letterSpacing: -0.6,
+                  letterSpacing: -0.4,
                 ),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
               Material(
-                color: Colors.white.withValues(alpha: 0.1),
+                color: MikuTheme.mint,
                 borderRadius: BorderRadius.circular(14),
                 child: InkWell(
                   onTap: onChangeMode,
@@ -211,26 +200,32 @@ class _PracticeHero extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
-                      vertical: 9,
+                      vertical: 10,
                     ),
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(
                           Icons.tune_rounded,
-                          size: 16,
-                          color: MikuTheme.stageCyan,
+                          size: 17,
+                          color: MikuTheme.primary,
                         ),
                         const SizedBox(width: 8),
-                        Flexible(
+                        Expanded(
                           child: Text(
                             settings.practiceSummary,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              color: Colors.white,
+                              color: MikuTheme.ink,
                               fontWeight: FontWeight.w600,
                             ),
+                          ),
+                        ),
+                        const Text(
+                          'Đổi',
+                          style: TextStyle(
+                            color: MikuTheme.primary,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
@@ -238,42 +233,23 @@ class _PracticeHero extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 18),
               Semantics(
                 button: true,
                 label: 'Bắt đầu luyện nói với Miku',
-                child: FilledButton.icon(
-                  onPressed: onStart,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: MikuTheme.stageCyan,
-                    foregroundColor: MikuTheme.ink,
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: onStart,
+                    icon: const Icon(Icons.mic_rounded),
+                    label: const Text('Nói chuyện với Miku'),
                   ),
-                  icon: const Icon(Icons.mic_rounded),
-                  label: const Text('Luyện ngay'),
                 ),
               ),
             ],
           ),
         ),
       ],
-    ),
-  );
-}
-
-class _HeroOrb extends StatelessWidget {
-  const _HeroOrb({required this.size, this.color = MikuTheme.stageCyan});
-
-  final double size;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: size,
-    height: size,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      color: color.withValues(alpha: 0.08),
-      border: Border.all(color: color.withValues(alpha: 0.12)),
     ),
   );
 }
@@ -360,7 +336,7 @@ class _FeatureCard extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: MikuTheme.primary.withValues(alpha: 0.1),
+                color: MikuTheme.mint,
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(icon, color: MikuTheme.primary),
@@ -397,13 +373,13 @@ class _PracticeTip extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
-      color: MikuTheme.primary.withValues(alpha: 0.07),
+      color: MikuTheme.blush,
       borderRadius: BorderRadius.circular(MikuTheme.radiusMedium),
     ),
     child: const Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.lightbulb_outline_rounded, color: MikuTheme.primary),
+        Icon(Icons.music_note_rounded, color: MikuTheme.accent),
         SizedBox(width: 12),
         Expanded(
           child: Text(

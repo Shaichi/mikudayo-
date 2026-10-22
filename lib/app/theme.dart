@@ -2,19 +2,24 @@ import 'package:flutter/material.dart';
 
 /// Hệ thiết kế chung của ứng dụng.
 ///
-/// Màn hội thoại dùng nền "stage" tối, trong khi các màn nội dung dùng nền
-/// sáng dễ đọc. Hai nhánh vẫn chia sẻ cùng màu thương hiệu, typography, radius
-/// và khoảng cách để không tạo cảm giác như hai ứng dụng khác nhau.
+/// Tông sáng theo Miku: xanh ngọc của tóc (#39C5BB) cho mảng màu, xanh ngọc
+/// đậm cho chữ/nút cần tương phản, hồng của trang phục model Live2D làm điểm
+/// nhấn. Mọi màn (kể cả màn hội thoại) dùng nền sáng.
 class MikuTheme {
   MikuTheme._();
 
-  static const Color primary = Color(0xFF00A0B0);
-  static const Color secondary = Color(0xFF39C2D7);
-  static const Color stageCyan = Color(0xFF52F4DE);
-  static const Color accent = Color(0xFFED5C88);
-  static const Color canvas = Color(0xFFF4FAFC);
-  static const Color ink = Color(0xFF071217);
-  static const Color mutedInk = Color(0xFF557074);
+  /// Xanh ngọc đậm — đủ tương phản cho chữ trắng trên nút và chữ trên nền sáng.
+  static const Color primary = Color(0xFF0F7F7A);
+  static const Color secondary = Color(0xFF39C5BB);
+
+  /// Xanh ngọc Miku — chỉ dùng làm mảng màu/trang trí, không dùng cho chữ nhỏ.
+  static const Color stageCyan = Color(0xFF39C5BB);
+  static const Color accent = Color(0xFFE0508F);
+  static const Color canvas = Color(0xFFF4FBFA);
+  static const Color mint = Color(0xFFE2F6F3);
+  static const Color blush = Color(0xFFFDEAF2);
+  static const Color ink = Color(0xFF17323A);
+  static const Color mutedInk = Color(0xFF5A7378);
 
   static const double radiusSmall = 12;
   static const double radiusMedium = 18;

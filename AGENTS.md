@@ -17,17 +17,15 @@
 - Chạy `flutter analyze && flutter test`.
 - Cập nhật `pubspec.yaml` khi cần dependency (qua RFC nếu conflict).
 
-### Unity (`unity/MikuAvatar/`)
-- Sửa scene `.unity`, runtime script, gesture VRMA Resources.
-- Chạy `prepare + export` batchmode theo `HANDOFF.md §7`.
-- Không commit `Library/`, `Temp/`, `Obj/`, `Logs/`, `UserSettings/`,
-  `unityLibrary/`.
+### Avatar Live2D (`assets/web/live2d/`)
+- Sửa `index.html` / `demo.html` (renderer WebView).
+- Không commit `assets/web/live2d/model/` (license cấm phân phối lại).
 
 ## Scope bị cấm (trừ khi Human Director duyệt)
 
 - `.env` thật, `tailscale-setup-*.msi`, `tailscale-setup-latest.exe`.
 - `backend/data/`, `backend/temp/` (runtime SQLite / audio).
-- `茶味式　初音ミク/`, `assets/vrm/` (private model).
+- `assets/web/live2d/model/` (private model).
 - `.git/` (mọi thao tác phá huỷ).
 - Xoá / reset / clean hàng loạt bất kỳ artifact nào.
 
@@ -38,8 +36,8 @@
 - Edit/Write: chỉ trong scope được phép. Mọi ngoài scope dừng tại
   `AI RECOMMENDATION: PENDING HUMAN REVIEW`.
 - WebFetch / WebSearch: chỉ dùng cho URL thuộc `package:` pub.dev,
-  `api.fish.audio`, Google AI docs, `vrm-c/UniVRM`, `ChatDollKit`,
-  `flutter.dev`, `developer.android.com`, `unity.com`.
+  `api.fish.audio`, Google AI docs, `flutter.dev`, `developer.android.com`,
+  Live2D / pixi-live2d-display docs.
 
 ## Decision escalation
 

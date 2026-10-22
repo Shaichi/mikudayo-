@@ -155,6 +155,8 @@ Lưu ý quan trọng: trước đây `speech_to_text.locales()` bị treo trên 
 
 ## 5. Flutter và Unity avatar
 
+> **Đã lỗi thời (2026-10-22):** Unity/VRM đã gỡ khỏi app, xem mục 16.
+
 ### 5.1 Renderer
 
 - Android/iOS: `UnityAvatar` nhúng Unity native.
@@ -237,6 +239,8 @@ http://<IP-của-PC-trong-LAN-hoặc-Tailscale>:8000
 ```
 
 ## 7. Unity prepare và export
+
+> **Đã lỗi thời (2026-10-22):** không còn bước Unity, xem mục 16.
 
 Unity source nằm tại:
 
@@ -423,3 +427,55 @@ Mốc UI + voice hiện tại chỉ được coi là hoàn tất khi máy Androi
 - audio cuối có `voice_mode=fish_audio` khi Gemini và Fish được cấu hình;
 - emotion của phản hồi được phản ánh hợp lý ở giọng và avatar;
 - không có crash hoặc mất tương tác sau vài lượt liên tiếp.
+
+## 14. AI guardrails (mốc 2026-10-21, `.sdd/features/feat-ai-guardrails/SPEC.md`)
+
+Đã đo bằng Gemini thật (`backend/tests/eval`, chạy: `python -X utf8 -m tests.eval.run_eval`; gói free 15 req/phút, runner tự giãn cách):
+
+- **RAG vector ngữ pháp không hoạt động**: độ tương đồng câu đúng/sai đều 0.54–0.68, ngưỡng 0.7 → 0 chunk. Chế độ correction giờ dùng bước phát hiện lỗi (`detect_error`, temp 0, kèm `severity`) rồi tra chunk theo `error_type` (`grammar_taxonomy.py`). RAG vector chỉ là đường dự phòng khi `AI_ERROR_DETECTION_ENABLED=false`.
+- Pipeline mới `services/turn_pipeline.py`: phát hiện lỗi → sinh → hậu kiểm (`guardrails.py`) → sinh lại tối đa 1 lần → câu dự phòng. Gemini 429 → HTTP 503 + `Retry-After`. `scenario` được chuẩn hóa và gắn nhãn dữ liệu không đáng tin.
+- Kết quả: bộ 30 ca đạt 154/155 check (trước đó 149/150 nhưng RAG chết, sửa-nhầm chưa được đo đúng). Bộ `co-*` sau chỉnh `severity`: 74/75.
+- **Còn tồn tại**: `co-ok-8` (`雨が降るから、傘を持ってください`) — detector (flash-lite) vẫn báo lỗi sai (`word_choice`/`request`) dù câu đúng. Hướng xử lý tiếp: bước xác minh lần hai cho các loại lỗi `word_choice`/`request`/`other`, hoặc dùng model mạnh hơn cho detector.
+- Chưa làm: nối `last_gesture`/guardrail vào kiểm thử end-to-end qua HTTP, đo trên giọng nói thật (lỗi STT), tune ngưỡng độ dài theo level.
+- Lưu ý: tài liệu Unity ở §5.4 có thể lỗi thời — `MikuAvatarBridge.PlayGesture` hiện gọi `MikuNaturalGestureController` (chỉ đầu/ngực), không còn phát clip VRMA; `nod.vrma.bytes` đã có trong repo.
+
+## 15. Avatar 2D Live2D + giao diện sáng (mốc 2026-10-22)
+
+**Avatar**: cờ `kUseLive2dAvatar` (`lib/avatar/avatar_config.dart`, đang `true`) thay Unity/VRM bằng Live2D trong màn hội thoại. Code Unity/VRM còn nguyên, đặt cờ `false` để quay lại.
+
+- Renderer: `assets/web/live2d/index.html` (PixiJS 6.5.10 + pixi-live2d-display 0.4.0 + Live2D Cubism Core 5, trong `lib/`), chạy trong `VrmAvatar(assetRoot: 'assets/web/live2d/', rawEmotions: true)` qua `AssetHttpServer` (đã decode `%20` trong đường dẫn). Giao thức JS: `emotion` (6 biểu cảm), `speech` (cues), `exps` (danh sách file exp3 bật cùng lúc), JS gửi lại `loaded`/`error`/`tap`.
+- Model: Miku "いますぐ輪廻" (Ruby_呜哔うび / 慈善小霓, ko-fi.com/rubybee). **Chỉ dùng cá nhân, phi thương mại; cấm phát lại/re-upload/tách asset.** Không phát hành APK chứa model, không commit model: `assets/web/live2d/model/` nằm trong `.gitignore`. Gốc giải nén ở `C:\Users\pc\Desktop\mikudayo-private\miku2d\RetrynowMiku\`; chuẩn bị lại bằng cách copy file và hạ texture 4096→2048 (không sửa mesh/part). Clone mới thiếu thư mục model sẽ làm `flutter build` lỗi vì `pubspec.yaml` khai báo nó.
+- Tham số `Watermark`=1 là ẩn watermark (toggle của tác giả); `#watermark=on` để hiện.
+- Chạm model: đầu → embarrassed, thân → happy, dưới → excited (2,2 s).
+- Tay/đạo cụ/trang phục: `lib/avatar/avatar_look.dart` (lưu SharedPreferences) + `widgets/look_sheet.dart`, mở bằng nút mắc áo trên thanh trên. Mọi đạo cụ chỉ hiện đủ với tư thế `Hold Staff2`, nên chọn đạo cụ tự thêm tư thế đó. Tư thế `Item Behind Back*` thực chất cầm gậy sang bên → không đưa vào app.
+- Demo web: `cd assets/web/live2d && python -m http.server 8765` → `demo.html` (có nút cho cả ~40 exp3).
+- Chưa làm: cử chỉ (`gesture`) cho Live2D; Gemini chưa biết các biểu cảm/đạo cụ mở rộng; chưa đo VRAM/FPS trên máy thật (17 texture 2048²; nếu giật hạ 1024).
+
+**Giao diện**: chuyển toàn app sang tông sáng theo Miku — `MikuTheme.primary` xanh ngọc đậm `#0F7F7A` (chữ/nút), `stageCyan` `#39C5BB` (mảng màu), `accent` hồng `#E0508F` (từ trang phục model), `mint`/`blush` cho nền phụ. `lib/app/miku_decor.dart`: `CandyStripe` (sọc kẹo như nơ Miku), `StaffLines` (khuông nhạc mờ nền màn hội thoại). Màn hội thoại: nền sáng, phụ đề thành thẻ thoại có nhãn ミク, nút trắng viền ngọc, micro xanh/hồng khi ghi âm. Trang chủ: bỏ thẻ tối + hình tròn trang trí, thay bằng thẻ trắng có dải sọc. Lịch sử/Từ vựng/Cài đặt chỉ đổi theo bảng màu theme.
+
+## 16. Gỡ Unity và VRM 3D (mốc 2026-10-22)
+
+App chỉ còn một avatar: **Live2D trong WebView** (`lib/avatar/live2d_avatar.dart`,
+widget `Live2dAvatar`, trước là `VrmAvatar`). Đã bỏ:
+
+- Dart: `unity_avatar.dart`, `avatar_config.dart` (cờ `kUseLive2dAvatar`), nhánh
+  VRM trong widget avatar.
+- `pubspec.yaml`: `flutter_embed_unity`, `flutter_embed_unity_6000_0_android`,
+  `webview_windows`, asset `assets/web/vrm/`.
+- Android: module `:unityLibrary` trong `settings.gradle.kts`, dependency và
+  `androidResources` riêng cho Unity trong `app/build.gradle.kts`, các dòng
+  `unity.*` trong `gradle.properties`.
+- Thư mục `unity/`, `android_room/`, `android/unityLibrary/`, `tool/`,
+  `assets/web/vrm/`, `茶味式　初音ミク/`, `VRM_RENDER_OPTIONS.md`.
+
+Các thư mục trên được **chuyển** (không xóa) sang
+`C:\Users\pc\Desktop\mikudayo_unity_vrm_backup\`. Có thể xóa thư mục backup
+khi chắc chắn không cần nữa.
+
+NDK: `android/app/build.gradle.kts` vẫn đặt `ndkVersion = "27.2.12479018"`.
+Trước đây thư mục NDK này là junction sang NDK của Unity ở ổ D (đã hỏng);
+giờ là NDK thật cài qua `sdkmanager "ndk;27.2.12479018"`.
+
+Build Android giờ chỉ cần `flutter build apk --release --target-platform
+android-arm64` (bản debug chậm hơn nhiều, đừng dùng để đánh giá độ mượt).
+

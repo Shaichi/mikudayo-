@@ -7,9 +7,9 @@ import 'live2d_bridge.dart';
 
 /// Điều khiển avatar Miku — Phase 5.
 ///
-/// - Emotion: `setEmotion` → trả qua state, UI (VrmAvatar / emoji) phản ứng.
+/// - Emotion: `setEmotion` → trả qua state, UI (Live2dAvatar / emoji) phản ứng.
 /// - Lip-sync: `playMouthCues` đặt `speechSeq` + `mouthCues` vào state một lần.
-///   Web (VrmAvatar) đọc state và gửi toàn bộ cues lên JS; JS tự nội suy độ mở
+///   Web (Live2dAvatar) đọc state và gửi toàn bộ cues lên JS; JS tự nội suy độ mở
 ///   miệng theo thời gian → Flutter không còn timer 30ms/msg.
 class AvatarController extends Notifier<AvatarState> {
   Live2dBridge _bridge = NoopLive2dBridge();

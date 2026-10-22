@@ -19,7 +19,7 @@ Không còn sử dụng AivisSpeech, RVC, CUDA/GPU hoặc model giọng local. B
 
 ## Thành phần
 
-- Flutter: UI, Google SpeechRecognizer, playback `just_audio`, Unity avatar.
+- Flutter: UI, Google SpeechRecognizer, playback `just_audio`, avatar Live2D (WebView).
 - FastAPI: Gemini, SQLite, Fish Audio proxy, audio status.
 - Fish Audio: sinh toàn bộ giọng nói online qua `reference_id`.
 - Android chỉ gửi transcript text; audio microphone không được upload về backend.
@@ -95,7 +95,7 @@ lib/data/services/speech_recognition_service.dart  Google STT Android
 lib/data/services/api_service.dart         FastAPI client
 lib/data/services/audio_service.dart       playback
 lib/features/conversation/                 UI và state hội thoại
-unity/MikuAvatar/                          avatar 3D
+assets/web/live2d/                         avatar Live2D (WebView)
 ```
 
 ## Test

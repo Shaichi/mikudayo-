@@ -1,11 +1,8 @@
-import 'dart:ui';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../avatar/vrm_avatar.dart';
-import '../../avatar/unity_avatar.dart';
+import '../../avatar/live2d_avatar.dart';
+import '../../app/miku_decor.dart';
 import '../../app/theme.dart';
 import '../../data/models/conversation_turn.dart';
 import '../../data/services/api_service.dart';
@@ -13,6 +10,7 @@ import '../../data/services/audio_service.dart';
 import '../settings/settings_screen.dart';
 import 'conversation_view_model.dart';
 import 'widgets/chat_bubble.dart';
+import 'widgets/look_sheet.dart';
 
 class ConversationScreen extends ConsumerStatefulWidget {
   const ConversationScreen({super.key});
@@ -27,7 +25,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   bool _showComposer = false;
   bool _soundEnabled = true;
 
-  static const _background = Color(0xFF03080D);
+  static const _background = MikuTheme.canvas;
 
   @override
   void dispose() {
@@ -115,8 +113,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
     return Scaffold(
       backgroundColor: _background,
-      // Giữ nguyên viewport Flutter/Unity khi bàn phím mở. Chỉ composer được
-      // dịch lên bằng transform ở dưới, nên camera 3D không đổi tỷ lệ.
+      // Giữ nguyên viewport avatar khi bàn phím mở. Chỉ composer được
+      // dịch lên bằng transform ở dưới, nên Miku không đổi tỷ lệ.
       resizeToAvoidBottomInset: false,
       body: Stack(
         fit: StackFit.expand,
@@ -126,17 +124,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             child: SafeArea(
               bottom: false,
               child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final mobile =
-                      defaultTargetPlatform == TargetPlatform.android ||
-                      defaultTargetPlatform == TargetPlatform.iOS;
-                  return mobile
-                      ? const UnityAvatar()
-                      : VrmAvatar(
-                          width: constraints.maxWidth,
-                          height: constraints.maxHeight,
-                        );
-                },
+                builder: (context, constraints) => Live2dAvatar(
+                  width: constraints.maxWidth,
+                  height: constraints.maxHeight,
+                ),
               ),
             ),
           ),
@@ -150,6 +141,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                     practiceLabel: settings.practiceSummary,
                     onClose: () => Navigator.maybePop(context),
                     onHistory: () => _showHistory(state),
+                    onLook: () => showLookSheet(context),
                     onRefresh: state.isBusy
                         ? null
                         : () => _startNewSession(state),
@@ -246,15 +238,16 @@ class _AmbientBackground extends StatelessWidget {
   const _AmbientBackground();
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: const BoxDecoration(
-      gradient: RadialGradient(
-        center: Alignment(0, -0.15),
-        radius: 0.9,
-        colors: [Color(0xFF0C353A), Color(0xFF061218), Color(0xFF02060A)],
-        stops: [0, 0.5, 1],
+  Widget build(BuildContext context) => const DecoratedBox(
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [Color(0xFFD9F4F0), MikuTheme.canvas, Color(0xFFFCE9F1)],
+        stops: [0, 0.55, 1],
       ),
     ),
+    child: StaffLines(),
   );
 }
 
@@ -269,12 +262,11 @@ class _StageGradient extends StatelessWidget {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.black.withValues(alpha: 0.46),
             Colors.transparent,
             Colors.transparent,
-            Colors.black.withValues(alpha: 0.86),
+            MikuTheme.canvas.withValues(alpha: 0.92),
           ],
-          stops: const [0, 0.22, 0.58, 1],
+          stops: const [0, 0.6, 1],
         ),
       ),
     ),
@@ -287,11 +279,13 @@ class _TopBar extends StatelessWidget {
     required this.onClose,
     required this.onHistory,
     required this.onRefresh,
+    this.onLook,
   });
 
   final String practiceLabel;
   final VoidCallback onClose;
   final VoidCallback onHistory;
+  final VoidCallback? onLook;
   final VoidCallback? onRefresh;
 
   @override
@@ -308,12 +302,12 @@ class _TopBar extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'MIKU',
+              'ミク',
               style: TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 2.4,
+                color: MikuTheme.ink,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.5,
               ),
             ),
             const SizedBox(height: 2),
@@ -322,15 +316,22 @@ class _TopBar extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Color(0xFF9BB9BB),
-                fontSize: 10,
+                color: MikuTheme.mutedInk,
+                fontSize: 11.5,
                 fontWeight: FontWeight.w600,
-                letterSpacing: 0.3,
               ),
             ),
           ],
         ),
       ),
+      if (onLook != null) ...[
+        _GlassButton(
+          icon: Icons.checkroom_rounded,
+          tooltip: 'Đổi tay, đồ cầm, trang phục',
+          onTap: onLook,
+        ),
+        const SizedBox(width: 8),
+      ],
       _GlassButton(
         icon: Icons.add_comment_outlined,
         tooltip: onRefresh == null
@@ -359,21 +360,23 @@ class _UserEcho extends StatelessWidget {
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.42),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        color: MikuTheme.primary,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(16),
+          topRight: Radius.circular(16),
+          bottomLeft: Radius.circular(16),
+          bottomRight: Radius.circular(4),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.person_rounded, size: 16, color: Color(0xFF9BB9BB)),
-          const SizedBox(width: 8),
           Flexible(
             child: Text(
               text,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
+              style: const TextStyle(color: Colors.white, fontSize: 14),
             ),
           ),
         ],
@@ -391,58 +394,46 @@ class _StatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, color) = switch (phase) {
       ConversationPhase.recording => (
-        'ĐANG NGHE · ${recordingSeconds}s',
-        const Color(0xFFFF668A),
+        'Miku đang nghe · ${recordingSeconds}s',
+        MikuTheme.accent,
       ),
       ConversationPhase.recognizing => (
-        'ĐANG NHẬN DẠNG',
-        const Color(0xFFFFD166),
+        'Đang nhận dạng câu nói',
+        const Color(0xFFB07800),
       ),
-      ConversationPhase.thinking => ('ĐANG SUY NGHĨ', const Color(0xFF52F4DE)),
+      ConversationPhase.thinking => ('Miku đang nghĩ…', MikuTheme.primary),
       ConversationPhase.synthesizing => (
-        'ĐANG CHUẨN BỊ GIỌNG NÓI',
-        const Color(0xFF52F4DE),
+        'Miku chuẩn bị trả lời…',
+        MikuTheme.primary,
       ),
-      ConversationPhase.playing => ('MIKU ĐANG NÓI', const Color(0xFF52F4DE)),
-      ConversationPhase.error => ('CÓ LỖI', const Color(0xFFFF668A)),
-      ConversationPhase.idle => ('SẴN SÀNG', const Color(0xFF82CFC5)),
+      ConversationPhase.playing => ('Miku đang nói', MikuTheme.primary),
+      ConversationPhase.error => ('Có lỗi', const Color(0xFFC62F55)),
+      ConversationPhase.idle => ('Chạm micro để nói', MikuTheme.mutedInk),
     };
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(99),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.38),
-            borderRadius: BorderRadius.circular(99),
-            border: Border.all(color: color.withValues(alpha: 0.35)),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: color, blurRadius: 8)],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.2,
-                ),
-              ),
-            ],
+          const SizedBox(width: 7),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -482,19 +473,51 @@ class _SubtitleCardState extends State<_SubtitleCard> {
           child: AnimatedOpacity(
             duration: const Duration(milliseconds: 200),
             opacity: widget.text.isEmpty ? 0 : 1,
-            child: Text(
-              widget.text,
-              textAlign: TextAlign.center,
-              maxLines: _expanded ? null : 3,
-              overflow: _expanded
-                  ? TextOverflow.visible
-                  : TextOverflow.ellipsis,
-              style: const TextStyle(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
+              decoration: BoxDecoration(
                 color: Colors.white,
-                fontSize: 21,
-                height: 1.45,
-                fontWeight: FontWeight.w500,
-                shadows: [Shadow(color: Colors.black, blurRadius: 12)],
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: MikuTheme.stageCyan.withValues(alpha: 0.45),
+                  width: 1.4,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: MikuTheme.primary.withValues(alpha: 0.10),
+                    blurRadius: 18,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'ミク',
+                    style: TextStyle(
+                      color: MikuTheme.accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.text,
+                    maxLines: _expanded ? null : 3,
+                    overflow: _expanded
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: MikuTheme.ink,
+                      fontSize: 19,
+                      height: 1.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -529,62 +552,57 @@ class _ConversationError extends StatelessWidget {
     constraints: const BoxConstraints(maxWidth: 560),
     child: ClipRRect(
       borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF35151E).withValues(alpha: 0.9),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: const Color(0xFFFF668A).withValues(alpha: 0.4),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: MikuTheme.blush,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: MikuTheme.accent.withValues(alpha: 0.35)),
+        ),
+        child: Column(
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.error_outline_rounded,
+                  color: Color(0xFFC62F55),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: const TextStyle(color: MikuTheme.ink, height: 1.4),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Đóng thông báo',
+                  onPressed: onDismiss,
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: MikuTheme.mutedInk,
+                  ),
+                ),
+              ],
             ),
-          ),
-          child: Column(
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(
-                    Icons.error_outline_rounded,
-                    color: Color(0xFFFF8DA6),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (_isConnectionError)
+                  TextButton(
+                    onPressed: onSettings,
+                    child: const Text('Cài đặt máy chủ'),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      message,
-                      style: const TextStyle(color: Colors.white, height: 1.4),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Đóng thông báo',
-                    onPressed: onDismiss,
-                    icon: const Icon(
-                      Icons.close_rounded,
-                      color: Colors.white70,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (_isConnectionError)
-                    TextButton(
-                      onPressed: onSettings,
-                      child: const Text('Cài đặt máy chủ'),
-                    ),
-                  const SizedBox(width: 8),
-                  FilledButton.tonalIcon(
-                    onPressed: onKeyboard,
-                    icon: const Icon(Icons.keyboard_rounded),
-                    label: const Text('Nhập lại'),
-                  ),
-                ],
-              ),
-            ],
-          ),
+                const SizedBox(width: 8),
+                FilledButton.tonalIcon(
+                  onPressed: onKeyboard,
+                  icon: const Icon(Icons.keyboard_rounded),
+                  label: const Text('Nhập lại'),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     ),
@@ -608,7 +626,7 @@ class _LearningPeek extends StatelessWidget {
       parts.add('${result.vocabulary.length} từ mới');
     }
     return Material(
-      color: Colors.black.withValues(alpha: 0.46),
+      color: MikuTheme.mint,
       borderRadius: BorderRadius.circular(99),
       child: InkWell(
         onTap: onTap,
@@ -620,18 +638,22 @@ class _LearningPeek extends StatelessWidget {
             children: [
               const Icon(
                 Icons.school_outlined,
-                color: MikuTheme.stageCyan,
+                color: MikuTheme.primary,
                 size: 17,
               ),
               const SizedBox(width: 8),
               Text(
                 parts.join(' · '),
-                style: const TextStyle(color: Colors.white, fontSize: 12.5),
+                style: const TextStyle(
+                  color: MikuTheme.ink,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(width: 6),
               const Icon(
                 Icons.chevron_right_rounded,
-                color: Colors.white70,
+                color: MikuTheme.primary,
                 size: 18,
               ),
             ],
@@ -700,24 +722,20 @@ class _ControlDock extends ConsumerWidget {
               height: 76,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: recording
-                    ? const Color(0xFFFF557A)
-                    : const Color(0xFF52F4DE),
+                color: recording ? MikuTheme.accent : MikuTheme.primary,
+                border: Border.all(color: Colors.white, width: 4),
                 boxShadow: [
                   BoxShadow(
-                    color:
-                        (recording
-                                ? const Color(0xFFFF557A)
-                                : const Color(0xFF52F4DE))
-                            .withValues(alpha: 0.32),
-                    blurRadius: recording ? 28 : 18,
-                    spreadRadius: 3,
+                    color: (recording ? MikuTheme.accent : MikuTheme.primary)
+                        .withValues(alpha: recording ? 0.40 : 0.25),
+                    blurRadius: recording ? 26 : 16,
+                    spreadRadius: recording ? 4 : 1,
                   ),
                 ],
               ),
               child: Icon(
                 recording ? Icons.stop_rounded : Icons.mic_rounded,
-                color: const Color(0xFF03201D),
+                color: Colors.white,
                 size: 34,
               ),
             ),
@@ -757,45 +775,46 @@ class _Composer extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ClipRRect(
     borderRadius: BorderRadius.circular(28),
-    child: BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 620),
-        padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-        decoration: BoxDecoration(
-          color: const Color(0xFF102126).withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+    child: Container(
+      constraints: const BoxConstraints(maxWidth: 620),
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: MikuTheme.stageCyan.withValues(alpha: 0.6),
+          width: 1.4,
         ),
-        child: Row(
-          children: [
-            IconButton(
-              onPressed: onClose,
-              icon: const Icon(Icons.close_rounded, color: Color(0xFF8FA8AA)),
-            ),
-            Expanded(
-              child: TextField(
-                controller: controller,
-                focusNode: focusNode,
-                enabled: enabled,
-                style: const TextStyle(color: Colors.white),
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) => onSend(),
-                decoration: InputDecoration.collapsed(
-                  hintText: 'Nhập tiếng Nhật…  $hint',
-                  hintStyle: const TextStyle(color: Color(0xFF769093)),
-                ),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: onClose,
+            icon: const Icon(Icons.close_rounded, color: MikuTheme.mutedInk),
+          ),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              enabled: enabled,
+              style: const TextStyle(color: MikuTheme.ink),
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => onSend(),
+              decoration: InputDecoration.collapsed(
+                hintText: 'Nhập tiếng Nhật…  $hint',
+                hintStyle: const TextStyle(color: MikuTheme.mutedInk),
               ),
             ),
-            IconButton(
-              onPressed: enabled ? onSend : null,
-              icon: const Icon(
-                Icons.arrow_upward_rounded,
-                color: Color(0xFF52F4DE),
-              ),
+          ),
+          IconButton.filled(
+            onPressed: enabled ? onSend : null,
+            style: IconButton.styleFrom(
+              backgroundColor: MikuTheme.primary,
+              foregroundColor: Colors.white,
             ),
-          ],
-        ),
+            icon: const Icon(Icons.arrow_upward_rounded),
+          ),
+        ],
       ),
     ),
   );
@@ -821,8 +840,10 @@ class _GlassButton extends StatelessWidget {
       enabled: onTap != null,
       label: tooltip,
       child: Material(
-        color: Colors.white.withValues(alpha: 0.08),
-        shape: const CircleBorder(),
+        color: Colors.white,
+        shape: CircleBorder(
+          side: BorderSide(color: MikuTheme.stageCyan.withValues(alpha: 0.35)),
+        ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
@@ -831,7 +852,7 @@ class _GlassButton extends StatelessWidget {
             height: size,
             child: Icon(
               icon,
-              color: onTap == null ? Colors.white24 : Colors.white,
+              color: onTap == null ? Colors.black26 : MikuTheme.primary,
               size: size * 0.47,
             ),
           ),
@@ -852,7 +873,7 @@ class _HistorySheet extends StatelessWidget {
     maxChildSize: 0.9,
     builder: (context, controller) => DecoratedBox(
       decoration: const BoxDecoration(
-        color: Color(0xFF091318),
+        color: MikuTheme.canvas,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: Column(
@@ -862,7 +883,7 @@ class _HistorySheet extends StatelessWidget {
             width: 42,
             height: 4,
             decoration: BoxDecoration(
-              color: Colors.white24,
+              color: Colors.black12,
               borderRadius: BorderRadius.circular(4),
             ),
           ),
@@ -871,7 +892,7 @@ class _HistorySheet extends StatelessWidget {
             child: Text(
               'Lịch sử trò chuyện',
               style: TextStyle(
-                color: Colors.white,
+                color: MikuTheme.ink,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
@@ -882,7 +903,7 @@ class _HistorySheet extends StatelessWidget {
                 ? const Center(
                     child: Text(
                       'Chưa có cuộc trò chuyện',
-                      style: TextStyle(color: Color(0xFF82999B)),
+                      style: TextStyle(color: MikuTheme.mutedInk),
                     ),
                   )
                 : ListView.builder(
@@ -898,7 +919,7 @@ class _HistorySheet extends StatelessWidget {
                             message.text,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
-                              color: Color(0xFF82999B),
+                              color: MikuTheme.mutedInk,
                               fontSize: 12,
                             ),
                           ),

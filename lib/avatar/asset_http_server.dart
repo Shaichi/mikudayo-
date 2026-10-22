@@ -3,17 +3,20 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
-/// Serve `assets/web/vrm/` qua HTTP loopback (127.0.0.1) để WebView có origin
+/// Serve `assets/web/live2d/` qua HTTP loopback (127.0.0.1) để WebView có origin
 /// hợp lệ (http), tránh CORS file:// trên Android.
 ///
 /// Động cơ: `loadFlutterAsset` trên Android load qua `file://` (origin null) →
-/// Chromium chặn import ESM / fetch model (có hoặc không có bundle). Serve qua
-/// HTTP loopback cho ta origin `http://127.0.0.1:<port>` hợp lệ — `avatar.bundle.js`
-/// (IIFE) + `fetch('./vrm-model/*.vrm')` chạy như trang web thường, không cần
-/// native `WebViewAssetLoader`.
+/// Chromium chặn fetch model. Serve qua HTTP loopback cho ta origin
+/// `http://127.0.0.1:<port>` hợp lệ, không cần native `WebViewAssetLoader`.
 ///
 /// Lưu ý bảo mật: server CHỈ bind 127.0.0.1 (loopback), không lộ ra ngoài máy.
 class AssetHttpServer {
+  AssetHttpServer({this.assetRoot = 'assets/web/live2d/'});
+
+  /// Thư mục asset được serve (kết thúc bằng '/'), vd `assets/web/live2d/`.
+  final String assetRoot;
+
   HttpServer? _server;
   int? _port;
 
@@ -36,22 +39,26 @@ class AssetHttpServer {
   }
 
   void _handle(HttpRequest req) {
-    // Normalize path: strip query, map đến file trong assets/web/vrm/.
+    // Normalize path: strip query, map đến file trong [assetRoot].
     final uri = req.uri;
     var path = uri.path;
     if (path.startsWith('/')) path = path.substring(1);
     if (path.isEmpty || path.endsWith('/')) path = 'index.html';
 
     // Ngăn path traversal.
-    final segments = path.split('/').where((s) => s.isNotEmpty).toList();
+    // uri.path còn percent-encode (tên file như "Hold Staff2.exp3.json" có khoảng trắng).
+    final segments = path
+        .split('/')
+        .where((s) => s.isNotEmpty)
+        .map(Uri.decodeComponent)
+        .toList();
     if (segments.any((s) => s == '..')) {
       req.response.statusCode = HttpStatus.forbidden;
       req.response.close();
       return;
     }
 
-    final assetKey =
-        'assets/web/vrm/${segments.join('/')}';
+    final assetKey = '$assetRoot${segments.join('/')}';
     final loader = rootBundle;
 
     Future<void> serve() async {
@@ -61,8 +68,7 @@ class AssetHttpServer {
           data.offsetInBytes,
           data.lengthInBytes,
         );
-        req.response.headers.contentType =
-            _contentTypeFor(segments.last);
+        req.response.headers.contentType = _contentTypeFor(segments.last);
         req.response.contentLength = bytes.length;
         req.response.add(bytes);
         await req.response.close();
@@ -86,8 +92,10 @@ class AssetHttpServer {
         return ContentType('application', 'javascript', charset: 'utf-8');
       case 'json':
         return ContentType.json;
-      case 'vrm':
+      case 'moc3':
         return ContentType('application', 'octet-stream');
+      case 'png':
+        return ContentType('image', 'png');
       default:
         return ContentType.binary;
     }

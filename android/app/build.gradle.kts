@@ -40,15 +40,6 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
-
-    androidResources {
-        noCompress += listOf(".unity3d", ".ress", ".resource", ".obb", ".bundle", ".unityexp")
-        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~"
-    }
-}
-
-dependencies {
-    implementation(project(":unityLibrary"))
 }
 
 flutter {
