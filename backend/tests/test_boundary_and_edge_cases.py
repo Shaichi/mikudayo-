@@ -203,6 +203,36 @@ class BoundaryAndEdgeCasesTest(unittest.TestCase):
         self.assertEqual(status.status, "error")
         self.assertEqual(status.error, "audio_expired")
 
+    def test_audio_status_long_poll_returns_when_ready(self):
+        """`wait` giữ request tới khi job xong thay vì trả `pending` ngay."""
+        from app.api.conversation import _write_audio_status
+        from app.schemas.conversation import AudioGenerationStatus
+
+        sid = conv_repo.new_session("free_talk", "N5")
+        tid = conv_repo.add_turn_with_vocabulary(
+            session_id=sid, transcript_ja="待つ", reply_ja="返事",
+            correction_ja=None, explanation_vi=None, emotion="neutral",
+            gesture="none", difficulty="N5", vocabulary=[]
+        )
+        _write_audio_status(tid, AudioGenerationStatus())
+
+        async def scenario():
+            async def finish():
+                await asyncio.sleep(0.3)
+                _write_audio_status(tid, AudioGenerationStatus(
+                    status="ready", audio_url=f"/v1/audio/{tid}", voice_mode="mock"))
+
+            task = asyncio.create_task(finish())
+            started = asyncio.get_running_loop().time()
+            status = await get_audio_status(tid, wait=5)
+            await task
+            return status, asyncio.get_running_loop().time() - started
+
+        status, elapsed = asyncio.run(scenario())
+        self.assertEqual(status.status, "ready")
+        self.assertLess(elapsed, 2.0)
+        self.assertEqual(asyncio.run(get_audio_status(tid)).status, "ready")
+
     def test_health_endpoint_handles_missing_keys_gracefully(self):
         """Khi ALLOW_MOCK=false và thiếu API key, /health không throw 500 mà trả degraded."""
         with patch.object(settings, "ALLOW_MOCK", False), patch.object(settings, "GEMINI_API_KEY", ""):

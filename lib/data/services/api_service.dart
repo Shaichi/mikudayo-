@@ -102,9 +102,10 @@ class ApiService {
     while (DateTime.now().isBefore(deadline)) {
       late http.Response res;
       try {
+        // Long-poll: backend giữ request tới khi giọng xong (tối đa 15s).
         res = await _client
-            .get(_uri(baseUrl, '/v1/audio/$turnId/status'))
-            .timeout(const Duration(seconds: 5));
+            .get(_uri(baseUrl, '/v1/audio/$turnId/status?wait=15'))
+            .timeout(const Duration(seconds: 20));
       } on TimeoutException {
         await Future<void>.delayed(const Duration(milliseconds: 250));
         continue;

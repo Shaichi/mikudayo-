@@ -30,6 +30,8 @@ FISH_API_KEY=...
 FISH_MODEL=s2.1-pro-free
 FISH_REFERENCE_ID=3317b3ca88d74206b5478a22a2d502b9
 FISH_AUDIO_FORMAT=wav
+FISH_SAMPLE_RATE=24000
+FISH_AUDIO_PREROLL_MS=150
 FISH_LATENCY=low
 ALLOW_MOCK=false
 ENVIRONMENT=production
@@ -97,10 +99,11 @@ curl.exe -X POST http://127.0.0.1:8000/v1/conversation/turn `
   -F "text=こんにちは" -F "mode=free_talk" -F "jlpt_level=N5"
 ```
 
-Backend trả text ngay với `voice_mode=pending`. Flutter poll:
+Backend trả text ngay với `voice_mode=pending`. Flutter long-poll (backend giữ
+request tới khi giọng xong, tối đa `wait` giây, ≤ 20):
 
 ```text
-GET /v1/audio/<turn_id>/status
+GET /v1/audio/<turn_id>/status?wait=15
 GET /v1/audio/<turn_id>
 ```
 

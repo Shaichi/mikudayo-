@@ -116,8 +116,18 @@ def cleanup_temp_audio() -> None:
 
 
 @router.get("/v1/audio/{turn_id}/status", response_model=AudioGenerationStatus)
-async def get_audio_status(turn_id: str) -> AudioGenerationStatus:
-    """Cho Flutter poll nhẹ trong khi Fish Audio đang chạy nền."""
+async def get_audio_status(turn_id: str, wait: float = 0) -> AudioGenerationStatus:
+    """Trạng thái job giọng. `wait` (giây, tối đa 20) = long-poll: giữ request
+    tới khi hết `pending` để app không phải gọi lặp lại qua mạng chậm."""
+    deadline = time.monotonic() + max(0.0, min(float(wait), 20.0))
+    while True:
+        status = _read_audio_status(turn_id)
+        if status.status != "pending" or time.monotonic() >= deadline:
+            return status
+        await asyncio.sleep(0.1)
+
+
+def _read_audio_status(turn_id: str) -> AudioGenerationStatus:
     status_path = _audio_status_path(turn_id)
     if status_path.exists():
         try:

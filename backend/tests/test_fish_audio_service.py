@@ -55,6 +55,22 @@ class FishAudioServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["reference_id"], "voice-id")
         self.assertTrue(body["text"].startswith("[happy] "))
         self.assertGreater(body["prosody"]["speed"], 1.0)
+        self.assertEqual(body["sample_rate"], service.sample_rate)
+
+    async def test_sample_rate_zero_lets_fish_choose(self) -> None:
+        service = FishAudioService()
+        service.api_key = "test-key"
+        service.sample_rate = 0
+        fake_client = _FakeClient()
+
+        with patch(
+            "app.services.fish_audio_service.httpx.AsyncClient",
+            return_value=fake_client,
+        ):
+            await service.synthesize("こんにちは")
+
+        assert fake_client.request is not None
+        self.assertNotIn("sample_rate", fake_client.request[2])
 
     async def test_missing_key_is_not_reported_as_online(self) -> None:
         service = FishAudioService()

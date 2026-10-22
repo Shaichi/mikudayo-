@@ -22,8 +22,8 @@ void main() {
     );
 
     // Màn hình chính ưu tiên hành động luyện nói và không lộ thuật ngữ nội bộ.
-    expect(find.text('MIKU'), findsOneWidget);
-    expect(find.text('Luyện ngay'), findsOneWidget);
+    expect(find.text('ミクと話そう'), findsOneWidget);
+    expect(find.text('Nói chuyện với Miku'), findsOneWidget);
     expect(find.text('Không gian học tập'), findsOneWidget);
     expect(find.text('Từ vựng'), findsOneWidget);
     expect(find.textContaining('Phase'), findsNothing);

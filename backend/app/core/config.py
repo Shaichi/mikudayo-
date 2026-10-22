@@ -100,7 +100,10 @@ class Settings:
     # chấp nhận không có mouth cues phía backend.
     FISH_AUDIO_FORMAT: str = _env("FISH_AUDIO_FORMAT", "wav")
     # Give Android time to acquire audio focus before the first syllable.
-    FISH_AUDIO_PREROLL_MS: int = _int_env("FISH_AUDIO_PREROLL_MS", 300, 0, 5000)
+    FISH_AUDIO_PREROLL_MS: int = _int_env("FISH_AUDIO_PREROLL_MS", 150, 0, 5000)
+    # 24 kHz: file WAV ~nửa so với 44.1 kHz mặc định, tải nhanh hơn trên 4G.
+    # 0 = để Fish chọn mặc định.
+    FISH_SAMPLE_RATE: int = _int_env("FISH_SAMPLE_RATE", 24000, 0, 48000)
     FISH_LATENCY: str = _env("FISH_LATENCY", "low")
     FISH_TIMEOUT: float = _float_env("FISH_TIMEOUT", 60.0, 1.0, 180.0)
     FISH_RETRY_ATTEMPTS: int = _int_env("FISH_RETRY_ATTEMPTS", 3, 1, 5)

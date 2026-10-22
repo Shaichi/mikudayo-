@@ -58,6 +58,7 @@ class FishAudioService:
         self.reference_id = settings.FISH_REFERENCE_ID.strip()
         self.audio_format = settings.FISH_AUDIO_FORMAT.lower().strip()
         self.latency = settings.FISH_LATENCY.lower().strip()
+        self.sample_rate = settings.FISH_SAMPLE_RATE
         self.timeout = settings.FISH_TIMEOUT
         self.retry_attempts = settings.FISH_RETRY_ATTEMPTS
         self.temperature = settings.FISH_TEMPERATURE
@@ -116,6 +117,8 @@ class FishAudioService:
                 "volume": 0,
             },
         }
+        if self.sample_rate:
+            request_body["sample_rate"] = self.sample_rate
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
