@@ -8,6 +8,7 @@ Theo mục 8 của tài liệu:
 from __future__ import annotations
 
 import random
+import time
 from typing import Optional
 
 from pydantic import ValidationError
@@ -159,6 +160,7 @@ def _mock_output(user_text: str, mode: Mode, level: JpLevel) -> GeminiTurnOutput
 class GeminiService:
     def __init__(self) -> None:
         self._client: Optional[object] = None
+        self._cooldown_until: dict[str, float] = {}
         if not settings.GEMINI_API_KEY and not settings.ALLOW_MOCK:
             raise RuntimeError("GEMINI_API_KEY chưa được cấu hình và ALLOW_MOCK=false.")
         self._mock = settings.ALLOW_MOCK and not bool(settings.GEMINI_API_KEY)
@@ -183,6 +185,41 @@ class GeminiService:
     @property
     def is_mock(self) -> bool:
         return self._mock
+
+    def _models(self) -> list[str]:
+        """Model chính trước, rồi dự phòng; model đang cooldown bị đẩy xuống cuối."""
+        names = [settings.GEMINI_MODEL] + [
+            m.strip() for m in settings.GEMINI_FALLBACK_MODELS.split(",") if m.strip()
+        ]
+        names = list(dict.fromkeys(names))
+        now = time.monotonic()
+        cooling = self._cooldown_until
+        return [m for m in names if cooling.get(m, 0) <= now] + [
+            m for m in names if cooling.get(m, 0) > now
+        ]
+
+    def _generate(self, contents, config):
+        """generate_content với timeout + chuyển model khi model đang quá tải."""
+        from google.genai import types
+
+        config.http_options = types.HttpOptions(timeout=int(settings.GEMINI_TIMEOUT_SECONDS * 1000))
+        last_exc: Exception | None = None
+        for model in self._models():
+            try:
+                response = self._client.models.generate_content(
+                    model=model, contents=contents, config=config,
+                )
+                self._cooldown_until.pop(model, None)
+                return response
+            except Exception as exc:
+                code = getattr(exc, "code", None)
+                # Lỗi request/key: đổi model không giúp được.
+                if code in (400, 401, 403):
+                    raise
+                last_exc = exc
+                self._cooldown_until[model] = time.monotonic() + settings.GEMINI_COOLDOWN_SECONDS
+                logger.warning("Gemini %s lỗi/chậm (%s) — thử model khác.", model, str(exc)[:120])
+        raise last_exc or RuntimeError("Không có model Gemini nào khả dụng.")
 
     def build_prompt(
         self,
@@ -340,11 +377,7 @@ class GeminiService:
             if thinking in {"minimal", "low", "medium", "high"}:
                 gen_config.thinking_config = types.ThinkingConfig(thinking_level=thinking)
 
-            response = self._client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=contents,
-                config=gen_config,
-            )
+            response = self._generate(contents, gen_config)
             raw = response.text or ""
             if not raw.strip():
                 raise RuntimeError("Gemini trả về nội dung rỗng.")
@@ -393,10 +426,9 @@ class GeminiService:
             "required": ["has_error", "error_type", "quote", "severity"],
         }
         try:
-            response = self._client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=types.UserContent(parts=[types.Part(text=user_text)]),
-                config=types.GenerateContentConfig(
+            response = self._generate(
+                types.UserContent(parts=[types.Part(text=user_text)]),
+                types.GenerateContentConfig(
                     system_instruction=instruction,
                     response_mime_type="application/json",
                     response_schema=schema,
