@@ -201,7 +201,7 @@ def update_session_summary(session_id: str, summary: str) -> None:
 def get_recent_turns(session_id: str, limit: int) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
-            """SELECT transcript_ja, reply_ja, correction_ja
+            """SELECT transcript_ja, reply_ja, correction_ja, gesture
                FROM turns WHERE session_id=?
                ORDER BY created_at DESC, id DESC LIMIT ?""",
             (session_id, limit),

@@ -41,6 +41,24 @@ class GeminiTurnOutput(BaseModel):
     vocabulary: list[VocabItem] = Field(default_factory=list, max_length=4, description="Từ mới trong lượt")
 
 
+ErrorType = Literal[
+    "none",
+    "particle_motion", "particle_place", "particle_preference", "particle_wa_ga",
+    "permission", "desire", "request", "adjective", "give_receive", "conditional",
+    "passive", "causative", "reason", "sou", "okage_seide",
+    "wake_dewa_nai", "wake_ga_nai", "chigainai_hazu", "wake_niwa_ikanai", "nimokakawarazu",
+    "tense", "conjugation", "word_choice", "other",
+]
+
+
+class ErrorDetection(BaseModel):
+    """Kết quả bước phát hiện lỗi ngữ pháp (feat-ai-guardrails R1)."""
+
+    has_error: bool = False
+    error_type: ErrorType = "none"
+    quote: str = Field(default="", max_length=200, description="Đoạn sai nguyên văn trong câu người học")
+
+
 class ConversationRequest(BaseModel):
     session_id: Optional[str] = Field(default=None, max_length=100)
     mode: Mode = "free_talk"

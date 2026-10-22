@@ -31,6 +31,7 @@ from ..schemas.conversation import (
     Mode,
 )
 from ..services.gemini_service import GeminiService
+from ..services.turn_pipeline import run_turn
 from ..services.rag_grammar_service import RagGrammarService
 from ..services.fish_audio_service import (
     AudioPayload,
@@ -252,7 +253,12 @@ async def conversation_turn(
             logger.warning("Không lấy được từ vựng cần ôn tập: %s", exc)
 
     grounding_chunks = []
-    if effective_mode == "correction" and settings.RAG_GRAMMAR_ENABLED:
+    # Khi bật phát hiện lỗi, pipeline tự tra chunk theo error_type; RAG vector chỉ còn là đường dự phòng.
+    if (
+        effective_mode == "correction"
+        and settings.RAG_GRAMMAR_ENABLED
+        and not settings.AI_ERROR_DETECTION_ENABLED
+    ):
         try:
             t_rag = time.perf_counter()
             grounding_chunks = await run_in_threadpool(
@@ -267,21 +273,35 @@ async def conversation_turn(
     # --- Gemini (text only) ---
     t0 = time.perf_counter()
     try:
-        out = await run_in_threadpool(
-            _gemini.generate_turn,
-            user_text,
-            effective_mode,
-            effective_level,
-            summary,
-            recent,
-            effective_scenario,
-            candidates,
-            grounding_chunks,
+        out, turn_info = await run_in_threadpool(
+            lambda: run_turn(
+                _gemini,
+                user_text=user_text,
+                mode=effective_mode,
+                level=effective_level,
+                summary=summary,
+                recent_turns=recent,
+                scenario=effective_scenario,
+                candidate_vocab=candidates,
+                last_gesture=(recent[-1].get("gesture") or "none") if recent else "none",
+                legacy_chunks=grounding_chunks,
+            )
         )
+        timing["guardrail"] = {
+            "policy": turn_info.policy,
+            "retried": turn_info.retried,
+            "fallback": turn_info.fallback,
+            "notes": turn_info.notes,
+        }
     except ValidationError:
         raise HTTPException(502, "Gemini trả JSON không đúng schema.")
     except Exception as exc:
         logger.error("Gemini lỗi: %s", exc)
+        if "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc):
+            raise HTTPException(
+                503, "Gemini đang quá tải hoặc hết quota, thử lại sau ít giây.",
+                headers={"Retry-After": "20"},
+            )
         raise HTTPException(502, "Không gọi được Gemini.")
     timing["gemini_ms"] = int((time.perf_counter() - t0) * 1000)
 

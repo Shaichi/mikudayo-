@@ -148,3 +148,31 @@ text bị giới hạn theo `MAX_TEXT_LENGTH`, audio tạm được dọn theo
 - Chỉ backend giữ `FISH_API_KEY`; không nhúng key vào Flutter APK.
 - Voice `3317b3ca88d74206b5478a22a2d502b9` là public/community voice. Kiểm tra điều khoản của voice trước khi phát hành hoặc thương mại hóa.
 - Không gọi giọng này là giọng Hatsune Miku chính thức nếu chưa có quyền tương ứng.
+
+## 8. Triển khai Cloud miễn phí 24/7 với Koyeb
+
+Repository đã có sẵn [backend/Dockerfile](file:///C:/Users/pc/Desktop/mikudayo/backend/Dockerfile) tối ưu cho Koyeb Eco Free Tier (512MB RAM).
+
+### Các bước triển khai:
+
+1. **Đăng ký tài khoản:** Truy cập [koyeb.com](https://www.koyeb.com/) và đăng nhập bằng GitHub.
+2. **Tạo Service mới:** Chọn **Create Service** → Chọn **GitHub**.
+3. **Chọn repository:** Chọn repo `Shaichi/mikudayo-` và branch mong muốn.
+4. **Cấu hình Builder:**
+   - **Root directory:** `backend`
+   - **Builder:** `Dockerfile`
+5. **Cấu hình Port & Route:**
+   - Port: `8000` (Protocol: HTTP)
+   - Public route: `/`
+6. **Cấu hình Instance:**
+   - Chọn **Eco** → **Nano** ($0/tháng, 512MB RAM).
+   - Region: `Frankfurt (fra)` hoặc `Washington D.C. (was)`.
+7. **Biến môi trường (Environment Variables):**
+   - `GEMINI_API_KEY`: API Key Gemini của bạn.
+   - `GEMINI_MODEL`: `gemini-3.6-flash`.
+   - `FISH_API_KEY`: Key Fish Audio (nếu dùng TTS).
+   - `REQUIRE_AUTH`: `false` (để client Flutter gọi API không cần header token).
+   - `CORS_ORIGINS`: `*`
+   - `TRUSTED_HOSTS`: `*`
+8. **Bấm Deploy:** Sau ~2 phút, Koyeb cấp URL HTTPS (ví dụ: `https://miku-backend-xxx.koyeb.app`). Dán URL này vào mục cài đặt server trên app Flutter.
+

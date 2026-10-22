@@ -64,6 +64,31 @@ def get_chunk(chunk_id: int) -> Optional[dict]:
     return dict(row) if row else None
 
 
+def get_chunks_by_title_keys(keys: tuple[str, ...], level: str = "N5") -> list[dict]:
+    """Lấy chunk theo từ khóa trong tiêu đề (tra cứu xác định, không dùng vector)."""
+    if not keys:
+        return []
+    allowed = _LEVEL_ORDER.get((level or "N5").upper().strip(), ("N5", "N4", "N3"))
+    clauses = " OR ".join("title LIKE ?" for _ in keys)
+    params = [f"%{k}%" for k in keys]
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT id, title, chunk_text, jlpt_level, source FROM grammar_chunks WHERE {clauses}",
+            params,
+        ).fetchall()
+    return [
+        {
+            "chunk_id": int(r["id"]),
+            "title": str(r["title"]),
+            "chunk_text": str(r["chunk_text"]),
+            "jlpt_level": str(r["jlpt_level"]).upper(),
+            "source": str(r["source"]),
+        }
+        for r in rows
+        if str(r["jlpt_level"]).upper() in allowed
+    ]
+
+
 def count_chunks() -> int:
     with get_conn() as conn:
         row = conn.execute("SELECT COUNT(*) AS total FROM grammar_chunks").fetchone()

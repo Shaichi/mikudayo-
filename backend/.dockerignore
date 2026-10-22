@@ -1,0 +1,13 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+venv
+.venv-rvc
+data/
+temp/
+tests/
+.git
+.gitignore

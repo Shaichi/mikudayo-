@@ -69,6 +69,12 @@ class Settings:
     # Tài liệu xác nhận gemini-3.5-flash-lite HỖ TRỢ thinking (default minimal).
     # Chỉ tốn thời gian tính toán, KHÔNG tốn phí/thêm quota.
     GEMINI_THINKING: str = _env("GEMINI_THINKING", "minimal")
+    # Chế độ correction cần ổn định hơn hội thoại thường (feat-ai-guardrails R10).
+    GEMINI_TEMPERATURE_CORRECTION: float = _float_env("GEMINI_TEMPERATURE_CORRECTION", 0.2, 0.0, 0.3)
+
+    # --- AI guardrails (feat-ai-guardrails) ---
+    AI_ERROR_DETECTION_ENABLED: bool = _bool_env("AI_ERROR_DETECTION_ENABLED", True)
+    AI_MAX_REPLY_CHARS: int = _int_env("AI_MAX_REPLY_CHARS", 90, 20, 400)
 
     # --- Vocabulary Reinforcement ---
     VOCAB_REINFORCEMENT_ENABLED: bool = _bool_env("VOCAB_REINFORCEMENT_ENABLED", True)
