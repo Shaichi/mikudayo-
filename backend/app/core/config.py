@@ -63,6 +63,13 @@ class Settings:
     # Android nhận dạng giọng nói bằng Google SpeechRecognizer rồi chỉ gửi text.
     # Backend vì vậy dùng model text nhanh, nhẹ và quota rộng.
     GEMINI_MODEL: str = _env("GEMINI_MODEL", "gemini-3.5-flash-lite")
+    # Google hay quá tải riêng từng model (flash-lite từng chậm 30-40s/câu).
+    # Google không nhận deadline dưới 10s.
+    # Model chính quá GEMINI_TIMEOUT_SECONDS hoặc báo 429/5xx -> gọi lần lượt các
+    # model dự phòng, và dùng thẳng dự phòng trong GEMINI_COOLDOWN_SECONDS.
+    GEMINI_FALLBACK_MODELS: str = _env("GEMINI_FALLBACK_MODELS", "gemini-3.5-flash,gemini-3-flash-preview")
+    GEMINI_TIMEOUT_SECONDS: float = _float_env("GEMINI_TIMEOUT_SECONDS", 10.0, 10.0, 60.0)
+    GEMINI_COOLDOWN_SECONDS: float = _float_env("GEMINI_COOLDOWN_SECONDS", 300.0, 0.0, 3600.0)
     GEMINI_MAX_TURNS: int = _int_env("GEMINI_MAX_TURNS", 8, 1, 30)
     GEMINI_TEMPERATURE: float = _float_env("GEMINI_TEMPERATURE", 0.7, 0.0, 2.0)
     # Gemini Thinking: 'minimal' | 'low' | 'medium' | 'high' | '' (tắt).
